@@ -18,7 +18,9 @@ body{
   color:var(--text);
 }
 a{color:inherit; text-decoration:none}
-.container{max-width:1080px; margin:0 auto; padding:24px}
+/* Slightly narrower layout + a bit more side padding for better readability */
+.container{max-width:980px; margin:0 auto; padding:32px}
+@media (max-width: 720px){ .container{padding:20px} }
 .nav{
   display:flex; gap:14px; align-items:center; justify-content:space-between;
   padding:16px 0;
@@ -42,6 +44,10 @@ a{color:inherit; text-decoration:none}
   display:grid; grid-template-columns: 1.2fr .8fr; gap:18px;
 }
 @media (max-width: 880px){ .hero{grid-template-columns:1fr} }
+
+/* Centered/narrow content blocks (used on product pages) */
+.narrow{max-width:860px; margin:0 auto}
+.hero-single{grid-template-columns:1fr}
 .h1{font-size:42px; line-height:1.05; margin:10px 0}
 .sub{color:var(--muted); font-size:16px; line-height:1.5; margin:10px 0 0}
 .card{
@@ -174,4 +180,23 @@ input::placeholder, textarea::placeholder{color: rgba(148,163,184,.7)}
   width:10px;height:10px;border-radius:999px;
   background: linear-gradient(90deg, var(--brand), var(--brand2));
   display:inline-block;
+}
+
+.whatsapp-float {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: #25D366;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 20px rgba(0,0,0,.25);
+  z-index: 9999;
+}
+.whatsapp-float img {
+  width: 28px;
+  height: 28px;
 }
