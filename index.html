@@ -15,21 +15,18 @@
         <span>GanaCitas</span>
       </a>
       <div class="navlinks">
-        <a href="/vozagenda/">VozAgenda</a>
-        <a href="/whatsapp/">WhatsApp Chat</a>
-        <a href="/redes/">Redes 1 click</a>
+        <a href="/asistente-telefonico/">Asistente telefónico</a>
       </div>
     </div>
 
     <div class="hero">
       <div class="card p24">
-        <div class="badge">Agentes IA • España & LATAM</div>
         <h1 class="h1">Convierte llamadas en ventas, citas y atención 24/7</h1>
         <p class="sub">4 servicios listos para vender. Cada uno con 2 planes (mensual/anual). Hosting perfecto para Cloudflare Pages • ganacitas.com.</p>
 
-        <div style="display:flex; flex-direction:column; gap:10px; margin-top:16px; max-width:420px">
-          <a class="btn primary" href="/vozagenda/">Ver VozAgenda</a>
-          <a class="btn" href="#servicios">Cómo funciona</a>
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:16px; max-width:520px">
+          <button class="btn primary" data-open-demo="#demoModal" data-service="asistente-telefonico">Click aquí para probar Asistente Telefónico</button>
+          <a class="btn" href="/asistente-telefonico/">Quiero mi asistente telefónico</a>
         </div>
 
         <div class="kpis">
@@ -40,110 +37,39 @@
       </div>
 
       <div class="card p24">
-        <h3 class="h3">Config rápido</h3>
-        <ol class="ul">
-          <li>Conecta tu dominio a Cloudflare Pages • ganacitas.com.</li>
-          <li>Añade tus enlaces de pago (Stripe Payment Links).</li>
-          <li>Conecta n8n (webhook) para demo y calendar.</li>
-        </ol>
+        <h3 class="h3">Cómo te ayuda</h3>
+        <ul class="ul">
+          <li>Atiende llamadas y captura datos automáticamente.</li>
+          <li>Agenda citas en Google Calendar sin intervención humana.</li>
+          <li>Reduce llamadas perdidas y acelera conversiones.</li>
+        </ul>
         <hr class="sep">
-        <div class="pill">Tip: puedes empezar con presupuesto casi 0.</div>
-      </div>
-    </div>
-
-    <div id="servicios" class="section">
-      <h2 class="h2">Servicios</h2>
-      <p class="muted">Cada servicio vive en su URL y tiene 2 planes: mensual y anual.</p>
-
-      
-      <div class="grid">
-        <div class="card p24 col-6">
-          <div class="badge">VozAgenda</div>
-          <h3 class="h3" style="margin-top:10px">Agente de voz + agenda automática</h3>
-          <p class="muted">Atiende llamadas, cualifica clientes y agenda citas en Google Calendar.</p>
-          <div class="muted" style="margin-top:10px">Qué incluye</div>
-          <ul class="ul">
-            <li>Número para recibir llamadas o redirección (según operador)</li>
-            <li>Agenda automática con confirmación de fecha y hora</li>
-            <li>Instalación 12–36h</li>
-          </ul>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
-            <a class="btn primary" href="/vozagenda/">Ver página</a>
-            <button class="btn" data-open-demo="#demoModal" data-service="vozagenda">Probar ahora</button>
-          </div>
-        </div>
-
-        <div class="card p24 col-6">
-          <div class="badge">WhatsApp Chat</div>
-          <h3 class="h3" style="margin-top:10px">Chat web de WhatsApp para tu página</h3>
-          <p class="muted">Un botón/chat que abre WhatsApp y te ayuda a captar leads.</p>
-          <div class="muted" style="margin-top:10px">Qué incluye</div>
-          <ul class="ul">
-            <li>Widget en tu web (móvil y escritorio)</li>
-            <li>Personalización (texto, horario, equipo)</li>
-            <li>Guía rápida de instalación</li>
-          </ul>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
-            <a class="btn primary" href="/whatsapp/">Ver página</a>
-            <a class="btn" href="https://wa.me/XXXXXXXXXXX" target="_blank" rel="noreferrer">Quiero mi chat de WhatsApp</a>
-          </div>
-        </div>
-
-        <div class="card p24 col-6">
-          <div class="badge">Publicación en redes en 1 click</div>
-          <h3 class="h3" style="margin-top:10px">Publica contenido en segundos</h3>
-          <p class="muted">Convierte ideas en posts listos para publicar (con plantilla y revisión).</p>
-          <div class="muted" style="margin-top:10px">Qué incluye</div>
-          <ul class="ul">
-            <li>Plantillas de contenido</li>
-            <li>Calendario de publicaciones</li>
-            <li>Textos listos para IG/FB/LinkedIn</li>
-          </ul>
-          <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
-            <a class="btn primary" href="/redes/">Ver página</a>
-          </div>
-        </div>
-      </div>
-
-    </div>
-
-    <div id="contacto" class="section">
-      <h2 class="h2">Contacto</h2>
-      <p class="muted">Añade aquí tu email, WhatsApp o un chat widget (Crisp/Tawk.to).</p>
-      <div class="card p24">
-        <div class="row">
-          <div>
-            <div class="h3">WhatsApp</div>
-            <p class="muted">Pega tu link de WhatsApp en el footer o añade un botón flotante.</p>
-          </div>
-          <div>
-            <div class="h3">Email</div>
-            <p class="muted">ventas@tu-dominio.com</p>
-          </div>
-        </div>
-        <hr class="sep">
-        <div class="pill">Config en <span class="code">/assets/app.js</span></div>
+        <div class="pill">Listo para negocios locales.</div>
       </div>
     </div>
 
     <div class="footer">
-      <div>© 2025 GanaCitas • Cloudflare Pages • ganacitas.com</div>
+      <div>© 2025 GanaCitas • ganacitas.com</div>
       <div style="display:flex; gap:12px; flex-wrap:wrap">
-        <a href="/vozagenda/" class="muted">VozAgenda</a>
-        <a href="/whatsapp/" class="muted">WhatsApp Chat</a>
-        <a href="/redes/" class="muted">Redes 1 click</a>
+        <a href="/asistente-telefonico/" class="muted">Asistente telefónico</a>
       </div>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
   <script src="/assets/app.js"></script>
-
-  <!-- WhatsApp floating button (configure your number in href) -->
-  <a class="wa-float" href="https://wa.me/XXXXXXXXXXX" target="_blank" rel="noreferrer" aria-label="WhatsApp">
-    <span class="wa-dot"></span>
-    WhatsApp
-  </a>
-
+<!--Start of Tawk.to Script-->
+<script type="text/javascript">
+var Tawk_API=Tawk_API||{}, Tawk_LoadStart=new Date();
+(function(){
+var s1=document.createElement("script"),s0=document.getElementsByTagName("script")[0];
+s1.async=true;
+s1.src='https://embed.tawk.to/694c5a3f1b401c197cbf6628/1jd9412iq';
+s1.charset='UTF-8';
+s1.setAttribute('crossorigin','*');
+s0.parentNode.insertBefore(s1,s0);
+})();
+</script>
+<!--End of Tawk.to Script-->
 </body>
 </html>
