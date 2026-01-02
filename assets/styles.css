@@ -228,8 +228,17 @@ input::placeholder, textarea::placeholder{color: rgba(148,163,184,.7)}
   width: 28px;
   height: 28px;
 }
+
+/* ===== Center hero content ONLY ===== */
 .hero-center {
   text-align: center;
+}
+
+/* Center subtitle nicely */
+.hero-center .sub {
+  margin-left: auto;
+  margin-right: auto;
+  max-width: 640px;
 }
 
 /* Center the button group */
@@ -278,4 +287,8 @@ input::placeholder, textarea::placeholder{color: rgba(148,163,184,.7)}
   width: min(520px, 100%);
   margin-left: auto;
   margin-right: auto;
+}
+.page-asistente #precios > .h2,
+.page-asistente #precios > .muted {
+  text-align: center;
 }
