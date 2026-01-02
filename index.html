@@ -56,6 +56,39 @@
     </div>
   </div>
 
+
+  <!-- Demo / Config modal -->
+  <div id="demoModal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="demoTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div id="demoTitle" class="modal-title">Configura el asistente telefónico</div>
+          <div class="muted" style="margin-top:4px">Déjanos el nombre de tu empresa para preparar tu demo.</div>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Cerrar" data-close="#demoModal">✕</button>
+      </div>
+
+      <form data-demo-form>
+        <input type="hidden" name="service" value="asistente-telefonico"/>
+
+        <label class="field">
+          <span class="label">¿Cuál es el nombre de tu empresa?</span>
+          <input name="company" type="text" placeholder="Ej. Clínica Dental Sonríe" autocomplete="organization" required />
+        </label>
+
+        <div class="modal-actions">
+          <button class="btn btn-ghost" type="button" data-close="#demoModal">Cancelar</button>
+          <button class="btn btn-primary" type="submit">Probar Asistente Telefónico</button>
+        </div>
+
+        <div class="muted" style="margin-top:10px; font-size:13px">
+          Al continuar, aceptas que podamos contactarte para configurar el asistente.
+        </div>
+      </form>
+    </div>
+  </div>
+
+
   <div id="toast" class="toast"></div>
   <script src="/assets/app.js"></script>
 <a class="whatsapp-float"
