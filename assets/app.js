@@ -20,6 +20,7 @@ window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
 window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
 // Optional: settle endpoint after call ends (updates Notion cost, etc.)
 window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
+window.__demoSubmitting = false;
 
 function ensureVapiInstance() {
   if (window.vapiInstance) return window.vapiInstance;
@@ -155,7 +156,7 @@ function attachVapiEndHandlers(vapi) {
         null;
 
       const demoPageId = window.VAPI_WEB?.demoPageId;
-      if (demoPageId && callId) {
+      if (demoPageId) {
         await settleDemoUsage({ demoPageId, callId });
       }
     } catch (e) {
@@ -218,37 +219,41 @@ function attachDemoHandlers() {
   });
 
   // Submit
+   // Submit
   $all("form[data-demo-form]").forEach((form) => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
+      if (window.__demoSubmitting) return;
+      window.__demoSubmitting = true;
+
       const startUrl = window.MYAGENCY_CONFIG.n8nStartWebhookUrl;
-      if (!startUrl) {
-        showToast("Configura MYAGENCY_CONFIG.n8nStartWebhookUrl.");
-        return;
-      }
-
-      const fd = new FormData(form);
-      const payload = Object.fromEntries(fd.entries());
-
-      const company = normalizeCompanyName(payload.company);
-      if (!company) {
-        showToast("Por favor escribe el nombre de tu empresa.");
-        const inp = form.querySelector('input[name="company"]');
-        if (inp) inp.focus();
-        return;
-      }
-      payload.company = company;
-
       const submitBtn = form.querySelector('button[type="submit"]');
       const originalText = submitBtn ? submitBtn.textContent : "Probar Asistente Telefónico";
 
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Procesando…";
-      }
-
       try {
+        if (!startUrl) {
+          showToast("Configura MYAGENCY_CONFIG.n8nStartWebhookUrl.");
+          return;
+        }
+
+        const fd = new FormData(form);
+        const payload = Object.fromEntries(fd.entries());
+
+        const company = normalizeCompanyName(payload.company);
+        if (!company) {
+          showToast("Por favor escribe el nombre de tu empresa.");
+          const inp = form.querySelector('input[name="company"]');
+          if (inp) inp.focus();
+          return;
+        }
+        payload.company = company;
+
+        if (submitBtn) {
+          submitBtn.disabled = true;
+          submitBtn.textContent = "Procesando…";
+        }
+
         // 1) send to n8n
         await postPlainJSON(startUrl, payload);
 
@@ -277,7 +282,7 @@ function attachDemoHandlers() {
         window.VAPI_WEB.assistantId = demo.assistantId;
         window.VAPI_WEB.demoPageId = demo.demoPageId;
 
-        // 3) initialize Vapi ONLY now (so no floating button before submit)
+        // 3) initialize Vapi ONLY now
         let vapi;
         try {
           vapi = ensureVapiInstance();
@@ -317,6 +322,8 @@ function attachDemoHandlers() {
         console.error(err);
         showToast("Error enviando el formulario. Revisa el webhook.");
       } finally {
+        window.__demoSubmitting = false;
+
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;

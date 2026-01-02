@@ -76,7 +76,7 @@ export async function onRequestGet({ env }) {
 
     // 2) optimization: check first 10 cheapest
     pages.sort((a, b) => a.cachedCost - b.cachedCost);
-    const toCheck = pages.slice(0, Math.min(10, pages.length));
+    const toCheck = pages.slice(0, Math.min(7, pages.length));
 
     const checked = [];
     for (const acc of toCheck) {
