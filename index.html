@@ -100,10 +100,17 @@
     var g = document.createElement(t),
       s = d.getElementsByTagName(t)[0];
     g.src = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest/dist/index.js";
+
     g.onload = function () {
+      if (!window.VAPI_WEB?.publicKey || !window.VAPI_WEB?.assistantId) {
+        console.error("[Vapi] Missing publicKey or assistantId", window.VAPI_WEB);
+        return;
+      }
+
       window.vapiInstance = new window.Vapi(window.VAPI_WEB.publicKey);
       console.log("[Vapi] loaded");
 
+      // Helpful debug listeners
       try {
         window.vapiInstance.on("call-end", function () {
           console.log("[Vapi] call ended");
@@ -115,9 +122,11 @@
         console.warn("[Vapi] event listeners not supported in this build", e);
       }
     };
+
     g.onerror = function () {
       console.error("[Vapi] failed to load");
     };
+
     s.parentNode.insertBefore(g, s);
   })(document, "script");
 </script>
