@@ -50,7 +50,13 @@ export async function onRequestPost({ request, env }) {
   const data = await stripeRes.json();
 
   if (!stripeRes.ok) {
-    return new Response(JSON.stringify({ error: data }), { status: 400 });
+    return new Response(JSON.stringify({
+    stripe_status: stripeRes.status,
+    stripe_error: data
+  }), {
+    status: 400,
+    headers: { "Content-Type": "application/json" }
+  });
   }
 
   return new Response(JSON.stringify({ url: data.url }), {
