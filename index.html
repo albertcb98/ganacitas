@@ -97,30 +97,20 @@
   window.vapiInstance = null;
 
   (function (d, t) {
-    var g = document.createElement(t),
+    var g = d.createElement(t),
       s = d.getElementsByTagName(t)[0];
-    g.src = "https://cdn.vapi.ai/web/vapi.js";
+
+    g.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
+    g.defer = true;
+    g.async = true;
 
     g.onload = function () {
-      if (!window.VAPI_WEB?.publicKey || !window.VAPI_WEB?.assistantId) {
-        console.error("[Vapi] Missing publicKey or assistantId", window.VAPI_WEB);
-        return;
-      }
-
-      window.vapiInstance = new window.Vapi(window.VAPI_WEB.publicKey);
+      window.vapiInstance = window.vapiSDK.run({
+        apiKey: window.VAPI_WEB.publicKey,
+        assistant: window.VAPI_WEB.assistantId,
+        config: {}, // opcional
+      });
       console.log("[Vapi] loaded");
-
-      // Helpful debug listeners
-      try {
-        window.vapiInstance.on("call-end", function () {
-          console.log("[Vapi] call ended");
-        });
-        window.vapiInstance.on("error", function (e) {
-          console.error("[Vapi] error", e);
-        });
-      } catch (e) {
-        console.warn("[Vapi] event listeners not supported in this build", e);
-      }
     };
 
     g.onerror = function () {
