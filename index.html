@@ -85,16 +85,16 @@
   </div>
 
 
-  <div id="toast" class="toast"></div>
+ <div id="toast" class="toast"></div>
+
 <script>
   window.VAPI_WEB = {
     publicKey: "acef9582-0544-4170-82cc-62e0020fb6df",
     assistantId: "1caed6c8-6768-45d2-989c-2f58d70cc642"
   };
-</script>
 
-<script>
   window.vapiInstance = null;
+  window.__vapiScriptLoaded = false;
 
   (function (d, t) {
     var g = d.createElement(t),
@@ -105,12 +105,8 @@
     g.async = true;
 
     g.onload = function () {
-      window.vapiInstance = window.vapiSDK.run({
-        apiKey: window.VAPI_WEB.publicKey,
-        assistant: window.VAPI_WEB.assistantId,
-        config: {}, // opcional
-      });
-      console.log("[Vapi] loaded");
+      window.__vapiScriptLoaded = true;
+      console.log("[Vapi] script loaded (not initialized)");
     };
 
     g.onerror = function () {
@@ -121,7 +117,7 @@
   })(document, "script");
 </script>
 
-<script src="/assets/app.js"></script>
+<script src="/assets/app.js" defer></script>
 
 </body>
 </html>

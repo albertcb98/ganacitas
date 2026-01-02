@@ -8,22 +8,22 @@
 window.MYAGENCY_CONFIG = window.MYAGENCY_CONFIG || {};
 window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
   "https://n8n.worfklow.fun/webhook/ganacitas/start";
-// --- Vapi helpers ---
-function waitForVapi(timeoutMs = 8000) {
-  return new Promise((resolve, reject) => {
-    if (window.vapiInstance) return resolve(window.vapiInstance);
 
-    const started = Date.now();
-    const timer = setInterval(() => {
-      if (window.vapiInstance) {
-        clearInterval(timer);
-        resolve(window.vapiInstance);
-      } else if (Date.now() - started > timeoutMs) {
-        clearInterval(timer);
-        reject(new Error("Vapi not loaded (timeout)"));
-      }
-    }, 50);
+function ensureVapiInstance() {
+  if (window.vapiInstance) return window.vapiInstance;
+
+  if (!window.__vapiScriptLoaded || !window.vapiSDK) {
+    throw new Error("Vapi script not loaded yet");
+  }
+
+  // This injects Vapi UI (phone button), so we only do it when user starts a call.
+  window.vapiInstance = window.vapiSDK.run({
+    apiKey: window.VAPI_WEB.publicKey,
+    assistant: window.VAPI_WEB.assistantId,
+    config: {},
   });
+
+  return window.vapiInstance;
 }
 
 function $(sel, root = document) { return root.querySelector(sel); }
@@ -139,12 +139,8 @@ function attachDemoHandlers() {
       }
 
       try {
+        // 1) send to n8n
         await postJSON(startUrl, payload);
-
-        if (!window.vapiInstance) {
-          showToast("Cargando Vapi… intenta de nuevo en 2s.");
-          return;
-        }
 
         const assistantId = window.VAPI_WEB?.assistantId;
         if (!assistantId) {
@@ -152,12 +148,34 @@ function attachDemoHandlers() {
           return;
         }
 
+        // 2) initialize Vapi ONLY now (so no floating button before submit)
+        let vapi;
+        try {
+          vapi = ensureVapiInstance();
+        } catch (e2) {
+          console.error(e2);
+          showToast("Cargando el asistente… intenta de nuevo en 1s.");
+          return;
+        }
+
         closeModal("#demoModal");
         showToast("Iniciando llamada…");
 
-        await window.vapiInstance.start(assistantId, {
-          variableValues: { company: payload.company }
-        });
+        // 3) start call safely
+        try {
+          await vapi.start(assistantId, {
+            variableValues: { company: payload.company },
+          });
+        } catch (startErr) {
+          console.error(startErr);
+          const msg = (startErr && (startErr.errorMsg || startErr.message)) || "";
+          if (msg.toLowerCase().includes("meeting has ended")) {
+            showToast("La llamada terminó inmediatamente. Revisa permisos del micrófono y configuración del asistente.");
+          } else {
+            showToast("No se pudo iniciar la llamada. Revisa la consola.");
+          }
+          return;
+        }
 
         form.reset();
       } catch (err) {
