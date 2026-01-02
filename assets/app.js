@@ -7,8 +7,7 @@
 window.MYAGENCY_CONFIG = window.MYAGENCY_CONFIG || {};
 // ✅ Set your PRODUCTION webhook URL here:
 window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
-  window.MYAGENCY_CONFIG.n8nStartWebhookUrl ||
-  "https://n8n.workflow.fun/webhook/ganacitas/start";
+  "https://n8n.worfklow.fun/webhook/ganacitas/start";
 
 function $(sel, root = document) { return root.querySelector(sel); }
 function $all(sel, root = document) { return [...root.querySelectorAll(sel)]; }
@@ -40,7 +39,7 @@ function closeModal(modalId) {
 async function postJSON(url, payload) {
   const res = await fetch(url, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "text/plain;charset=UTF-8" },
     body: JSON.stringify(payload),
   });
 
