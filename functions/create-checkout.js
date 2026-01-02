@@ -20,23 +20,19 @@ export async function onRequestPost({ request, env }) {
 
   const siteUrl = env.SITE_URL || new URL(request.url).origin;
 
-  const params = new URLSearchParams({
-    mode: "subscription",
-    success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
+const params = new URLSearchParams({
+  mode: "subscription",
+  success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
 
-    // recurring line item
-    "line_items[0][price]": cfg.recurring,
-    "line_items[0][quantity]": "1",
+  // recurring subscription
+  "line_items[0][price]": cfg.recurring,
+  "line_items[0][quantity]": "1",
 
-    // setup fee charged on FIRST invoice
-    "subscription_data[add_invoice_items][0][price]": cfg.setup,
-    "subscription_data[add_invoice_items][0][quantity]": "1",
-
-    // If later you want Stripe to calculate IVA automatically:
-    // "automatic_tax[enabled]": "true",
-    // "billing_address_collection": "required",
-  });
+  // one-time setup fee (charged on first invoice)
+  "line_items[1][price]": cfg.setup,
+  "line_items[1][quantity]": "1",
+});
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
