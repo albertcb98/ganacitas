@@ -81,32 +81,10 @@
 
 <script>
   window.VAPI_WEB = {
-    publicKey: "acef9582-0544-4170-82cc-62e0020fb6df",
-    assistantId: "1caed6c8-6768-45d2-989c-2f58d70cc642"
+    publicKey: null,
+    assistantId: null,
+    demoPageId: null
   };
-
-  window.vapiInstance = null;
-  window.__vapiScriptLoaded = false;
-
-  (function (d, t) {
-    var g = d.createElement(t),
-      s = d.getElementsByTagName(t)[0];
-
-    g.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
-    g.defer = true;
-    g.async = true;
-
-    g.onload = function () {
-      window.__vapiScriptLoaded = true;
-      console.log("[Vapi] script loaded (not initialized)");
-    };
-
-    g.onerror = function () {
-      console.error("[Vapi] failed to load");
-    };
-
-    s.parentNode.insertBefore(g, s);
-  })(document, "script");
 </script>
 
 <script src="/assets/app.js" defer></script>

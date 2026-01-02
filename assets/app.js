@@ -2,18 +2,37 @@
  * Minimal JS for:
  * - Modal open/close
  * - Form submit to n8n webhook
+ * - Fetch available Vapi demo credentials from YOUR backend
  * - Start Vapi web call in browser after webhook succeeds
+ *
+ * IMPORTANT:
+ * - Do NOT put Notion/Vapi private keys in frontend.
+ * - This file expects your backend endpoints:
+ *    GET  /api/vapi-demo/select  -> { ok:true, demoPageId, publicKey, assistantId } OR { ok:false, message }
+ *    POST /api/vapi-demo/settle  -> (optional) { ok:true }  (best effort)
  */
 
 window.MYAGENCY_CONFIG = window.MYAGENCY_CONFIG || {};
 window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
   "https://n8n.worfklow.fun/webhook/ganacitas/start";
 
+// Your backend route that selects an available demo account
+window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
+// Optional: settle endpoint after call ends (updates Notion cost, etc.)
+window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
+
 function ensureVapiInstance() {
   if (window.vapiInstance) return window.vapiInstance;
 
   if (!window.__vapiScriptLoaded || !window.vapiSDK) {
     throw new Error("Vapi script not loaded yet");
+  }
+
+  if (!window.VAPI_WEB?.publicKey) {
+    throw new Error("Missing VAPI_WEB.publicKey (demo not selected)");
+  }
+  if (!window.VAPI_WEB?.assistantId) {
+    throw new Error("Missing VAPI_WEB.assistantId (demo not selected)");
   }
 
   // This injects Vapi UI (phone button), so we only do it when user starts a call.
@@ -54,7 +73,25 @@ function closeModal(modalId) {
   document.body.style.overflow = "";
 }
 
-async function postJSON(url, payload) {
+async function postJSON(url, payload, headers = {}) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...headers },
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${text}`.trim());
+  }
+
+  const ct = res.headers.get("content-type") || "";
+  if (ct.includes("application/json")) return await res.json();
+  return { ok: true, text: await res.text().catch(() => "") };
+}
+
+// Your existing webhook expects text/plain; keep this separate
+async function postPlainJSON(url, payload) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
@@ -73,6 +110,79 @@ async function postJSON(url, payload) {
 
 function normalizeCompanyName(str) {
   return (str || "").toString().trim().replace(/\s+/g, " ");
+}
+
+async function fetchAvailableDemo() {
+  const url = window.MYAGENCY_CONFIG.vapiDemoSelectUrl;
+  if (!url) throw new Error("Missing MYAGENCY_CONFIG.vapiDemoSelectUrl");
+
+  const res = await fetch(url, { method: "GET" });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`Demo select failed: HTTP ${res.status} ${text}`.trim());
+  }
+
+  const data = await res.json().catch(() => ({}));
+  return data;
+}
+
+async function settleDemoUsage({ demoPageId, callId }) {
+  const url = window.MYAGENCY_CONFIG.vapiDemoSettleUrl;
+  if (!url) return;
+
+  try {
+    await postJSON(url, { demoPageId, callId });
+  } catch (e) {
+    // Best-effort only; don't block UX
+    console.warn("[Settle] failed:", e);
+  }
+}
+
+function attachVapiEndHandlers(vapi) {
+  // Attach only once
+  if (window.__vapiEndHandlerAttached) return;
+  window.__vapiEndHandlerAttached = true;
+
+  // Try common event APIs. If your Vapi SDK uses different event names,
+  // log events and adjust accordingly.
+  const handler = async (evt) => {
+    try {
+      const callId =
+        evt?.call?.id ||
+        evt?.callId ||
+        evt?.id ||
+        window.__lastVapiCallId ||
+        null;
+
+      const demoPageId = window.VAPI_WEB?.demoPageId;
+      if (demoPageId && callId) {
+        await settleDemoUsage({ demoPageId, callId });
+      }
+    } catch (e) {
+      console.warn("[Call End] settle error:", e);
+    }
+  };
+
+  try {
+    if (typeof vapi.on === "function") {
+      // Common guesses
+      vapi.on("call-end", handler);
+      vapi.on("callEnded", handler);
+      vapi.on("ended", handler);
+
+      // Capture call id early if available
+      vapi.on("call-start", (evt) => {
+        const callId = evt?.call?.id || evt?.callId || evt?.id || null;
+        if (callId) window.__lastVapiCallId = callId;
+      });
+      vapi.on("callStarted", (evt) => {
+        const callId = evt?.call?.id || evt?.callId || evt?.id || null;
+        if (callId) window.__lastVapiCallId = callId;
+      });
+    }
+  } catch (e) {
+    console.warn("[Vapi events] failed to attach:", e);
+  }
 }
 
 function attachDemoHandlers() {
@@ -140,18 +250,38 @@ function attachDemoHandlers() {
 
       try {
         // 1) send to n8n
-        await postJSON(startUrl, payload);
+        await postPlainJSON(startUrl, payload);
 
-        const assistantId = window.VAPI_WEB?.assistantId;
-        if (!assistantId) {
-          showToast("Falta assistantId.");
+        // 2) ask backend for an available demo account (publicKey + assistantId)
+        showToast("Buscando un demo disponible…");
+        let demo;
+        try {
+          demo = await fetchAvailableDemo();
+        } catch (selErr) {
+          console.error(selErr);
+          showToast("No se pudo verificar disponibilidad. Intenta de nuevo en unos minutos.");
           return;
         }
 
-        // 2) initialize Vapi ONLY now (so no floating button before submit)
+        if (!demo || demo.ok !== true) {
+          const msg =
+            demo?.message ||
+            "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
+          showToast(msg);
+          return;
+        }
+
+        // Store selected demo config globally
+        window.VAPI_WEB = window.VAPI_WEB || {};
+        window.VAPI_WEB.publicKey = demo.publicKey;
+        window.VAPI_WEB.assistantId = demo.assistantId;
+        window.VAPI_WEB.demoPageId = demo.demoPageId;
+
+        // 3) initialize Vapi ONLY now (so no floating button before submit)
         let vapi;
         try {
           vapi = ensureVapiInstance();
+          attachVapiEndHandlers(vapi);
         } catch (e2) {
           console.error(e2);
           showToast("Cargando el asistente… intenta de nuevo en 1s.");
@@ -161,11 +291,16 @@ function attachDemoHandlers() {
         closeModal("#demoModal");
         showToast("Iniciando llamada…");
 
-        // 3) start call safely
+        // 4) start call safely
         try {
-          await vapi.start(assistantId, {
+          const result = await vapi.start(window.VAPI_WEB.assistantId, {
             variableValues: { company: payload.company },
           });
+
+          // Best effort: capture callId if returned
+          const callId = result?.call?.id || result?.id || result?.callId || null;
+          if (callId) window.__lastVapiCallId = callId;
+
         } catch (startErr) {
           console.error(startErr);
           const msg = (startErr && (startErr.errorMsg || startErr.message)) || "";
