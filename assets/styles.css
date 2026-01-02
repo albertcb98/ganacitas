@@ -228,3 +228,31 @@ input::placeholder, textarea::placeholder{color: rgba(148,163,184,.7)}
   width: 28px;
   height: 28px;
 }
+.hero-center {
+  text-align: center;
+}
+
+/* Center the button group */
+.hero-center > div[style*="flex"] {
+  align-items: center;
+}
+
+/* Center the "Cómo te ayuda" section */
+.hero-center .h3 {
+  text-align: center;
+}
+
+/* Center the checklist */
+.hero-center ul {
+  list-style: none;
+  padding-left: 0;
+  margin-left: 0;
+}
+
+.hero-center ul li {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+  margin: 10px 0;
+}
