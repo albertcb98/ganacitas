@@ -332,8 +332,32 @@ function attachDemoHandlers() {
     });
   });
 }
+function attachStripeHandlers() {
+  $all("[data-pay-link]").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const plan = btn.getAttribute("data-pay-link");
+      if (!plan) return;
 
+      btn.disabled = true;
+      const original = btn.textContent;
+      btn.textContent = "Redirigiendo…";
+
+      try {
+        const data = await postJSON("/create-checkout", { plan });
+        if (data?.url) window.location.href = data.url;
+        else showToast("No se pudo crear el checkout.");
+      } catch (e) {
+        console.error(e);
+        showToast("Error creando el pago. Revisa Stripe/Cloudflare logs.");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = original;
+      }
+    });
+  });
+}
 document.addEventListener("DOMContentLoaded", () => {
   attachDemoHandlers();
+  attachStripeHandlers();
   console.log("[App] handlers attached");
 });
