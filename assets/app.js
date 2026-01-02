@@ -1,143 +1,133 @@
-/**
- * Minimal JS for:
- * - Modal open/close
- * - Form submit to n8n webhook
- */
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>GanaCitas | Agentes IA para llamadas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+  <meta name="description" content="Agencia de agentes IA: recepcionista, citas, WhatsApp y facturas. Planes mensual/anual.">
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a class="brand" href="/">
+        <span style="width:12px;height:12px;border-radius:999px;background:linear-gradient(90deg,var(--brand),var(--brand2));display:inline-block"></span>
+        <span>GanaCitas</span>
+      </a>
+      <div class="navlinks">
+        <a href="/asistente-telefonico/">Asistente telefónico</a>
+      </div>
+    </div>
 
-window.MYAGENCY_CONFIG = window.MYAGENCY_CONFIG || {};
-// ✅ Set your PRODUCTION webhook URL here:
-window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
-  "https://n8n.worfklow.fun/webhook/ganacitas/start";
+    <div class="hero">
+      <div class="card p24">
+        <h1 class="h1">Convierte llamadas en ventas, citas y atención 24/7</h1>
 
-function $(sel, root = document) { return root.querySelector(sel); }
-function $all(sel, root = document) { return [...root.querySelectorAll(sel)]; }
+        <div style="display:flex; flex-direction:column; gap:10px; margin-top:16px; max-width:520px">
+          <button class="btn primary" data-open-demo="#demoModal" data-service="asistente-telefonico">Click aquí para probar Asistente Telefónico</button>
+          <a class="btn" href="/asistente-telefonico/">Quiero mi asistente telefónico</a>
+        </div>
 
-function showToast(msg) {
-  const t = $("#toast");
-  if (!t) return;
-  t.textContent = msg;
-  t.style.display = "block";
-  clearTimeout(window.__toastTimer);
-  window.__toastTimer = setTimeout(() => { t.style.display = "none"; }, 3600);
-}
+        <div style="margin-top:18px">
+          <h3 class="h3">Cómo te ayuda</h3>
+          <ul class="ul">
+            <li>Atiende llamadas y captura datos automáticamente.</li>
+            <li>Agenda citas en tu calendario (Google Calendar u otro) sin intervención humana.</li>
+            <li>Reduce llamadas perdidas y acelera conversiones.</li>
+          </ul>
+        </div>
 
-function openModal(modalId) {
-  const b = $(modalId);
-  if (!b) return;
-  b.style.display = "grid";
-  document.body.style.overflow = "hidden";
-  const first = b.querySelector("input,select,textarea,button");
-  if (first) setTimeout(() => first.focus(), 50);
-}
-function closeModal(modalId) {
-  const b = $(modalId);
-  if (!b) return;
-  b.style.display = "none";
-  document.body.style.overflow = "";
-}
+        <div class="kpis">
+          <div class="kpi">✔ Instalación gratuita en 8 a 24h</div>
+        </div>
+      </div>
 
-async function postJSON(url, payload) {
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    body: JSON.stringify(payload),
-  });
+      <div class="card p24">
+        <h3 class="h3">Listo para negocios locales</h3>
+        <p class="muted" style="margin:10px 0 0">Pensado para clínicas, servicios, inmobiliarias y cualquier negocio que no quiere perder llamadas.</p>
+      </div>
+    </div>
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`HTTP ${res.status} ${text}`.trim());
-  }
+    <div class="footer">
+      <div>© 2025 GanaCitas • ganacitas.com</div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap">
+        <a href="/asistente-telefonico/" class="muted">Asistente telefónico</a>
+      </div>
+    </div>
+  </div>
 
-  const ct = res.headers.get("content-type") || "";
-  if (ct.includes("application/json")) return await res.json();
-  return { ok: true, text: await res.text().catch(() => "") };
-}
 
-function normalizeCompanyName(str) {
-  return (str || "").toString().trim().replace(/\s+/g, " ");
-}
+  <!-- Demo / Config modal -->
+  <div id="demoModal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="demoTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div id="demoTitle" class="modal-title">Configura el asistente telefónico</div>
+        </div>
+        <button class="icon-btn" type="button" aria-label="Cerrar" data-close="#demoModal">✕</button>
+      </div>
 
-function attachDemoHandlers() {
-  // Open modal
-  $all("[data-open-demo]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const modal = btn.getAttribute("data-open-demo");
-      openModal(modal);
+      <form data-demo-form>
+        <input type="hidden" name="service" value="asistente-telefonico"/>
 
-      // Optional: prefill "service" if your form has it
-      const service = btn.getAttribute("data-service") || "";
-      const form = document.querySelector(modal + " form");
-      if (form) {
-        const svc = form.querySelector("input[name=service]");
-        if (svc) svc.value = service;
-      }
-    });
-  });
+        <label class="field">
+          <span class="label">¿Cuál es el nombre de tu empresa?</span>
+          <input name="company" type="text" placeholder="Ej. Clínica Dental Sonríe" autocomplete="organization" required />
+        </label>
 
-  // Close modal buttons
-  $all("[data-close]").forEach((btn) => {
-    btn.addEventListener("click", () => {
-      const modal = btn.getAttribute("data-close");
-      closeModal(modal);
-    });
-  });
+        <div class="modal-actions">
+          <button class="btn" type="button" data-close="#demoModal">Cancelar</button>
+          <button class="btn primary" type="submit">Probar Asistente Telefónico</button>
+        </div>
 
-  // Click outside modal closes
-  $all(".modal-backdrop").forEach((backdrop) => {
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) closeModal("#" + backdrop.id);
-    });
-  });
+      </form>
+    </div>
+  </div>
 
-  // Submit
-  $all("form[data-demo-form]").forEach((form) => {
-    form.addEventListener("submit", async (e) => {
-      e.preventDefault();
 
-      const startUrl = window.MYAGENCY_CONFIG.n8nStartWebhookUrl;
-      if (!startUrl) {
-        showToast("Configura MYAGENCY_CONFIG.n8nStartWebhookUrl.");
-        return;
-      }
+  <div id="toast" class="toast"></div>
+  <script src="/assets/app.js"></script>
+<a class="whatsapp-float"
+   href="https://wa.me/34632461050?text=tengo%20una%20duda%20sobre"
+   target="_blank"
+   aria-label="WhatsApp">
+  <img src="/assets/whatsapp.svg" alt="WhatsApp">
+</a>
+<script>
+  window.VAPI_WEB = {
+    publicKey: "acef9582-0544-4170-82cc-62e0020fb6df",
+    assistantId: "1caed6c8-6768-45d2-989c-2f58d70cc642"
+  };
+</script>
+<script>
+  window.vapiInstance = null;
 
-      // Read form fields
-      const fd = new FormData(form);
-      const payload = Object.fromEntries(fd.entries());
+  (function (d, t) {
+    var g = document.createElement(t),
+      s = d.getElementsByTagName(t)[0];
+    g.src = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest/dist/index.js";
+    g.onload = function () {
+      window.vapiInstance = new window.Vapi(window.VAPI_WEB.publicKey);
+      console.log("[Vapi] loaded");
 
-      // Validate company
-      const company = normalizeCompanyName(payload.company);
-      if (!company) {
-        showToast("Por favor escribe el nombre de tu empresa.");
-        const inp = form.querySelector('input[name="company"]');
-        if (inp) inp.focus();
-        return;
-      }
-      payload.company = company;
-
-      const submitBtn = form.querySelector('button[type="submit"]');
-      const originalText = submitBtn ? submitBtn.textContent : "";
-
-      if (submitBtn) {
-        submitBtn.disabled = true;
-        submitBtn.textContent = "Procesando…";
-      }
-
+      // Helpful debug listeners
       try {
-        await postJSON(startUrl, payload);
-        showToast("¡Listo! Te contactaremos en breve.");
-        closeModal("#demoModal");
-        form.reset();
-      } catch (err) {
-        console.error(err);
-        showToast("Error enviando el formulario. Revisa el webhook/CORS.");
-      } finally {
-        if (submitBtn) {
-          submitBtn.disabled = false;
-          submitBtn.textContent = originalText || "Probar Asistente Telefónico";
-        }
+        window.vapiInstance.on("call-end", function () {
+          console.log("[Vapi] call ended");
+        });
+        window.vapiInstance.on("error", function (e) {
+          console.error("[Vapi] error", e);
+        });
+      } catch (e) {
+        console.warn("[Vapi] event listeners not supported in this build", e);
       }
-    });
-  });
-}
+    };
+    g.onerror = function () {
+      console.error("[Vapi] failed to load");
+    };
+    s.parentNode.insertBefore(g, s);
+  })(document, "script");
+</script>
 
-document.addEventListener("DOMContentLoaded", attachDemoHandlers);
+</body>
+</html>

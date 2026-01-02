@@ -86,13 +86,43 @@
 
 
   <div id="toast" class="toast"></div>
-  <script src="/assets/app.js"></script>
-<a class="whatsapp-float"
-   href="https://wa.me/34632461050?text=tengo%20una%20duda%20sobre"
-   target="_blank"
-   aria-label="WhatsApp">
-  <img src="/assets/whatsapp.svg" alt="WhatsApp">
-</a>
+<script>
+  window.VAPI_WEB = {
+    publicKey: "acef9582-0544-4170-82cc-62e0020fb6df",
+    assistantId: "1caed6c8-6768-45d2-989c-2f58d70cc642"
+  };
+</script>
+
+<script>
+  window.vapiInstance = null;
+
+  (function (d, t) {
+    var g = document.createElement(t),
+      s = d.getElementsByTagName(t)[0];
+    g.src = "https://cdn.jsdelivr.net/npm/@vapi-ai/web@latest/dist/index.js";
+    g.onload = function () {
+      window.vapiInstance = new window.Vapi(window.VAPI_WEB.publicKey);
+      console.log("[Vapi] loaded");
+
+      try {
+        window.vapiInstance.on("call-end", function () {
+          console.log("[Vapi] call ended");
+        });
+        window.vapiInstance.on("error", function (e) {
+          console.error("[Vapi] error", e);
+        });
+      } catch (e) {
+        console.warn("[Vapi] event listeners not supported in this build", e);
+      }
+    };
+    g.onerror = function () {
+      console.error("[Vapi] failed to load");
+    };
+    s.parentNode.insertBefore(g, s);
+  })(document, "script");
+</script>
+
+<script src="/assets/app.js"></script>
 
 </body>
 </html>
