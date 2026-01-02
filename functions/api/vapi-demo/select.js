@@ -113,6 +113,10 @@ export async function onRequestGet({ env }) {
       assistantId: chosen.assistantId,
     });
   } catch (e) {
-    return Response.json({ ok: false, message: "Error del servidor. Intenta más tarde." }, { status: 500 });
+     console.log("select.js error:", e?.message || e, e?.stack);
+  return Response.json(
+    { ok: false, message: "Error del servidor. Intenta más tarde.", detail: String(e?.message || e) },
+    { status: 500 }
+  );
   }
 }
