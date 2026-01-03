@@ -7,10 +7,18 @@ export async function onRequestPost({ request, env }) {
 
   // Map your button keys -> Stripe Price IDs
   const PLAN_MAP = {
-    recepcionista_monthly: {
-      recurring: env.STRIPE_PRICE_47_MONTH,
-      setup: env.STRIPE_PRICE_57_SETUP,
-    },
+   recepcionista_esencial: {
+    recurring: env.STRIPE_PRICE_ESENCIAL,
+    setup: env.STRIPE_PRICE_SETUP,
+  },
+  recepcionista_profesional: {
+    recurring: env.STRIPE_PRICE_PROFESIONAL,
+    setup: env.STRIPE_PRICE_SETUP,
+  },
+  recepcionista_empresa: {
+    recurring: env.STRIPE_PRICE_EMPRESA,
+    setup: env.STRIPE_PRICE_SETUP,
+  },
   };
 
   const cfg = PLAN_MAP[plan];
