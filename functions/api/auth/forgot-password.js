@@ -35,6 +35,10 @@ function getBaseUrl(request, env) {
 }
 
 async function sendResetEmail({ env, toEmail, resetUrl }) {
+ console.log("RESEND_API_KEY present:", !!env.RESEND_API_KEY);
+  console.log("FROM_EMAIL:", env.FROM_EMAIL);
+  console.log("Sending reset to:", toEmail);
+  console.log("Reset URL:", resetUrl);
   // Resend optional:
   // RESEND_API_KEY, FROM_EMAIL, FROM_NAME (optional)
   if (!env.RESEND_API_KEY || !env.FROM_EMAIL) {
@@ -42,9 +46,9 @@ async function sendResetEmail({ env, toEmail, resetUrl }) {
     return;
   }
 
-  const fromName = env.FROM_NAME || "GanaCitas";
+  const fromName = env.FROM_NAME
   const payload = {
-    from: `${fromName} <${env.FROM_EMAIL}>`,
+     from: `${fromName} <${env.FROM_EMAIL}>`,
     to: [toEmail],
     subject: "Restablecer contraseña",
     text:
