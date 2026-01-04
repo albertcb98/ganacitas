@@ -338,6 +338,16 @@ async function getMe() {
   const data = await res.json().catch(() => null);
   return data?.user || null;
 }
+async function updateNavAuthLink() {
+  const a = document.getElementById("navAuth");
+  if (!a) return;
+
+  const me = await getMe(); // uses /api/auth/me
+  if (!me) return;
+
+  a.textContent = "Panel";
+  a.href = "/dashboard/";
+}
 
 function attachStripeHandlers() {
   $all("[data-pay-link]").forEach((btn) => {
@@ -348,7 +358,7 @@ function attachStripeHandlers() {
       const me = await getMe();
       if (!me) {
         const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
-        window.location.href = `/register/?next=${next}&plan=${encodeURIComponent(plan)}`;
+       window.location.href = `/register/?next=${next}&plan=${encodeURIComponent(plan)}&autopay=1`;
         return;
       }
 
@@ -370,9 +380,32 @@ function attachStripeHandlers() {
     });
   });
 }
+async function maybeAutoCheckout() {
+  const url = new URL(window.location.href);
+  const plan = url.searchParams.get("plan");
+  const autopay = url.searchParams.get("autopay");
+
+  if (autopay !== "1" || !plan) return;
+
+  const me = await getMe();
+  if (!me) return;
+
+  // Avoid re-triggering if user refreshes
+  url.searchParams.delete("autopay");
+  history.replaceState({}, "", url.pathname + url.search + url.hash);
+
+  // Small UX message
+  showToast("Cuenta lista. Redirigiendo al pago…");
+
+  // Trigger the matching plan button
+  const btn = document.querySelector(`[data-pay-link="${CSS.escape(plan)}"]`);
+  if (btn) btn.click();
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   attachDemoHandlers();
   attachStripeHandlers();
+ maybeAutoCheckout();
+updateNavAuthLink();
   console.log("[App] handlers attached");
 });

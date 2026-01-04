@@ -45,35 +45,43 @@
       window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
     }
 
-    function getParam(name){
-      const p = new URLSearchParams(window.location.search);
-      return p.get(name);
+    function qs(){
+      return new URLSearchParams(window.location.search);
     }
 
-    // Build Google URL with next (and keep plan if present by embedding into next)
-    (function(){
-      const next = getParam("next") || "/dashboard/";
-      const plan = getParam("plan");
+    function safeNext(nextMaybe){
+      // prevent open redirects
+      if(!nextMaybe || typeof nextMaybe !== "string") return "/dashboard/";
+      if(!nextMaybe.startsWith("/")) return "/dashboard/";
+      return nextMaybe;
+    }
 
-      // If you want to preserve plan too, append it into next:
-      // e.g. /dashboard/?plan=recepcionista_esencial
-      let nextFinal = next;
-      if (plan) {
-        const u = new URL(nextFinal, window.location.origin);
-        u.searchParams.set("plan", plan);
-        nextFinal = u.pathname + u.search + u.hash;
+    function buildNextWithPlanAndAutopay(){
+      const p = qs();
+      const next = safeNext(p.get("next") || "/dashboard/");
+      const plan = p.get("plan");
+      const autopay = p.get("autopay");
+
+      const u = new URL(next, window.location.origin);
+      if(plan) u.searchParams.set("plan", plan);
+      if(autopay) u.searchParams.set("autopay", autopay);
+
+      return u.pathname + u.search + u.hash;
+    }
+
+    (function initLinks(){
+      const nextFinal = buildNextWithPlanAndAutopay();
+
+      // Google login
+      const googleBtn = document.getElementById("googleBtn");
+      if(googleBtn){
+        googleBtn.href = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
       }
 
-      const googleUrl = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
-      const btn = document.getElementById("googleBtn");
-      if (btn) btn.href = googleUrl;
-
-      // Also keep next/plan if user switches to login
+      // Login link should preserve next
       const loginLink = document.getElementById("loginLink");
-      if (loginLink) {
-        const u2 = new URL("/login/", window.location.origin);
-        u2.searchParams.set("next", nextFinal);
-        loginLink.href = u2.pathname + u2.search;
+      if(loginLink){
+        loginLink.href = `/login/?next=${encodeURIComponent(nextFinal)}`;
       }
     })();
 
@@ -96,16 +104,10 @@
       try{
         await postJSON("/api/auth/register", payload);
 
-        // Respect next param after registering
-        const next = getParam("next") || "/dashboard/";
-        const plan = getParam("plan");
-        if (plan) {
-          const u = new URL(next, window.location.origin);
-          u.searchParams.set("plan", plan);
-          window.location.href = u.pathname + u.search + u.hash;
-        } else {
-          window.location.href = next;
-        }
+        // After register, go to next (with plan/autopay embedded)
+        const nextFinal = buildNextWithPlanAndAutopay();
+        window.location.href = nextFinal;
+
       }catch(err){
         showToast(err.message);
       }

@@ -45,32 +45,40 @@
       window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
     }
 
-    function getParam(name){
-      const p = new URLSearchParams(window.location.search);
-      return p.get(name);
+    function qs(){
+      return new URLSearchParams(window.location.search);
     }
 
-    (function(){
-      const next = getParam("next") || "/dashboard/";
-      const plan = getParam("plan");
+    function safeNext(nextMaybe){
+      if(!nextMaybe || typeof nextMaybe !== "string") return "/dashboard/";
+      if(!nextMaybe.startsWith("/")) return "/dashboard/";
+      return nextMaybe;
+    }
 
-      let nextFinal = next;
-      if (plan) {
-        const u = new URL(nextFinal, window.location.origin);
-        u.searchParams.set("plan", plan);
-        nextFinal = u.pathname + u.search + u.hash;
+    function buildNextWithPlanAndAutopay(){
+      const p = qs();
+      const next = safeNext(p.get("next") || "/dashboard/");
+      const plan = p.get("plan");
+      const autopay = p.get("autopay");
+
+      const u = new URL(next, window.location.origin);
+      if(plan) u.searchParams.set("plan", plan);
+      if(autopay) u.searchParams.set("autopay", autopay);
+
+      return u.pathname + u.search + u.hash;
+    }
+
+    (function initLinks(){
+      const nextFinal = buildNextWithPlanAndAutopay();
+
+      const googleBtn = document.getElementById("googleBtn");
+      if(googleBtn){
+        googleBtn.href = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
       }
 
-      const googleUrl = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
-      const btn = document.getElementById("googleBtn");
-      if (btn) btn.href = googleUrl;
-
       const registerLink = document.getElementById("registerLink");
-      if (registerLink) {
-        const u2 = new URL("/register/", window.location.origin);
-        u2.searchParams.set("next", nextFinal);
-        if (plan) u2.searchParams.set("plan", plan);
-        registerLink.href = u2.pathname + u2.search;
+      if(registerLink){
+        registerLink.href = `/register/?next=${encodeURIComponent(nextFinal)}`;
       }
     })();
 
@@ -92,16 +100,8 @@
 
       try{
         await postJSON("/api/auth/login", payload);
-
-        const next = getParam("next") || "/dashboard/";
-        const plan = getParam("plan");
-        if (plan) {
-          const u = new URL(next, window.location.origin);
-          u.searchParams.set("plan", plan);
-          window.location.href = u.pathname + u.search + u.hash;
-        } else {
-          window.location.href = next;
-        }
+        const nextFinal = buildNextWithPlanAndAutopay();
+        window.location.href = nextFinal;
       }catch(err){
         showToast(err.message);
       }
