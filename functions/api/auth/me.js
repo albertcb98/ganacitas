@@ -17,7 +17,7 @@ export async function onRequestGet({ request, env }) {
   if (!payload?.sub) return json({ error: "Invalid session" }, 401);
 
   const user = await env.DB.prepare(
-    "SELECT id, email, paid_status, stripe_customer_id, stripe_subscription_id, stripe_price_id FROM users WHERE id = ?"
+    "SELECT id, email, auth_provider, paid_status, stripe_customer_id, stripe_subscription_id, stripe_price_id FROM users WHERE id = ?"
   ).bind(payload.sub).first();
 
   if (!user) return json({ error: "User not found" }, 401);

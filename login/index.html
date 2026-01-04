@@ -85,6 +85,7 @@
     async function postJSON(url, payload){
       const r = await fetch(url, {
         method:"POST",
+        credentials:"include",
         headers:{"Content-Type":"application/json"},
         body: JSON.stringify(payload)
       });

@@ -19,6 +19,9 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Email y contraseña (mín. 8 caracteres) requeridos" }, 400);
   }
 
+  // Allow local http dev to set cookies; keep Secure on https.
+  const isHttps = new URL(request.url).protocol === "https:";
+
   const now = new Date().toISOString();
   const id = newId();
   const password_hash = await hashPassword(password);
@@ -37,6 +40,11 @@ export async function onRequestPost({ request, env }) {
   return json(
     { ok: true },
     200,
-    { "Set-Cookie": setCookie("session", token) }
+    {
+      "Set-Cookie": setCookie("session", token, {
+        secure: isHttps,
+        maxAge: 60 * 60 * 24 * 7, // 7 days
+      }),
+    }
   );
 }
