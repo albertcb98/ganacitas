@@ -29,7 +29,9 @@ export async function onRequestPost({ request, env }) {
 
   const body = await request.json().catch(() => null);
   const token = body?.token?.trim();
-  const newPassword = body?.newPassword;
+ const newPassword = typeof body?.newPassword === "string"
+  ? body.newPassword
+  : "";
 
   if (!token) {
     return json({ error: "Token inválido" }, 400);
