@@ -104,7 +104,7 @@
 
       if(!r.ok){
         if(r.status === 401){
-          throw new Error("Contraseña incorrecta");
+          throw new Error("Contraseña incorrecta o usuario inexistente");
         }
         throw new Error(data?.error || "Error");
       }
