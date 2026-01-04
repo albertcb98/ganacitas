@@ -32,6 +32,7 @@ export async function onRequestPost({ request, env }) {
  const newPassword = typeof body?.newPassword === "string"
   ? body.newPassword
   : "";
+console.log("RESET password type:", typeof newPassword);
 
   if (!token) {
     return json({ error: "Token inválido" }, 400);
