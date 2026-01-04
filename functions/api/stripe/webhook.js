@@ -32,7 +32,12 @@ function constantTimeEqual(a, b) {
  *
  * Stripe signs: `${t}.${rawBody}` with HMAC SHA256 using webhook secret.
  */
-async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceSec = 5 * 60 }) {
+async function verifyStripeSignature({
+  payloadRaw,
+  sigHeader,
+  secret,
+  toleranceSec = 5 * 60,
+}) {
   if (!sigHeader || !secret) return { ok: false, reason: "Missing signature or secret" };
 
   const parts = sigHeader.split(",").map((p) => p.trim());
@@ -44,7 +49,7 @@ async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceS
   const timestamp = Number(tPart.slice(2));
   if (!Number.isFinite(timestamp)) return { ok: false, reason: "Bad timestamp" };
 
-  // optional replay protection
+  // replay protection
   const now = Math.floor(Date.now() / 1000);
   if (Math.abs(now - timestamp) > toleranceSec) {
     return { ok: false, reason: "Timestamp outside tolerance" };
@@ -96,10 +101,15 @@ export async function onRequestPost({ request, env }) {
     return json({ error: "Invalid JSON" }, 400);
   }
 
-  const type = event.type;
-  const obj = event.data?.object;
+  const type = event?.type;
+  const obj = event?.data?.object;
+
+  if (!type || !obj) {
+    return json({ ok: true, ignored: "missing type/object" });
+  }
 
   try {
+    // 1) Checkout completed (best “link” to your user because of client_reference_id)
     if (type === "checkout.session.completed") {
       const session = obj;
 
@@ -109,7 +119,7 @@ export async function onRequestPost({ request, env }) {
 
       if (!userId) return json({ ok: true, ignored: "missing client_reference_id" });
 
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       await env.DB.prepare(
         `UPDATE users
@@ -119,12 +129,13 @@ export async function onRequestPost({ request, env }) {
              updated_at = ?
          WHERE id = ?`
       )
-        .bind(customerId, subscriptionId, now, userId)
+        .bind(customerId, subscriptionId, nowIso, userId)
         .run();
 
       return json({ ok: true });
     }
 
+    // 2) Subscription create/update
     if (type === "customer.subscription.created" || type === "customer.subscription.updated") {
       const sub = obj;
       const customerId = sub.customer;
@@ -136,7 +147,7 @@ export async function onRequestPost({ request, env }) {
       else if (sub.status === "canceled" || sub.status === "incomplete_expired") paid_status = "canceled";
 
       const priceId = sub.items?.data?.[0]?.price?.id || null;
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       await env.DB.prepare(
         `UPDATE users
@@ -146,16 +157,17 @@ export async function onRequestPost({ request, env }) {
              updated_at = ?
          WHERE stripe_customer_id = ?`
       )
-        .bind(paid_status, subscriptionId, priceId, now, customerId)
+        .bind(paid_status, subscriptionId, priceId, nowIso, customerId)
         .run();
 
       return json({ ok: true });
     }
 
+    // 3) Subscription deleted
     if (type === "customer.subscription.deleted") {
       const sub = obj;
       const customerId = sub.customer;
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       await env.DB.prepare(
         `UPDATE users
@@ -164,16 +176,17 @@ export async function onRequestPost({ request, env }) {
              updated_at = ?
          WHERE stripe_customer_id = ?`
       )
-        .bind(now, customerId)
+        .bind(nowIso, customerId)
         .run();
 
       return json({ ok: true });
     }
 
+    // 4) Payment failed
     if (type === "invoice.payment_failed") {
       const invoice = obj;
       const customerId = invoice.customer;
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       await env.DB.prepare(
         `UPDATE users
@@ -181,16 +194,17 @@ export async function onRequestPost({ request, env }) {
              updated_at = ?
          WHERE stripe_customer_id = ?`
       )
-        .bind(now, customerId)
+        .bind(nowIso, customerId)
         .run();
 
       return json({ ok: true });
     }
 
+    // 5) Payment succeeded
     if (type === "invoice.payment_succeeded") {
       const invoice = obj;
       const customerId = invoice.customer;
-      const now = new Date().toISOString();
+      const nowIso = new Date().toISOString();
 
       await env.DB.prepare(
         `UPDATE users
@@ -198,7 +212,7 @@ export async function onRequestPost({ request, env }) {
              updated_at = ?
          WHERE stripe_customer_id = ?`
       )
-        .bind(now, customerId)
+        .bind(nowIso, customerId)
         .run();
 
       return json({ ok: true });

@@ -32,7 +32,6 @@ export async function onRequestGet({ request, env }) {
   if (new Date(st.expires_at).getTime() < Date.now()) return new Response("State expired", { status: 400 });
 
   // NOTE: you are using auth_tokens.email to store `next`.
-  // That's fine for now, but consider renaming column later.
   const next = pickNext(st.email);
 
   // One-time use: delete state token now
@@ -56,6 +55,9 @@ export async function onRequestGet({ request, env }) {
   const tokenData = await tokenRes.json().catch(() => ({}));
   if (!tokenRes.ok) {
     return new Response(`Token exchange failed: ${tokenData.error || ""}`, { status: 400 });
+  }
+  if (!tokenData.access_token) {
+    return new Response("Token exchange failed: missing access_token", { status: 400 });
   }
 
   // Get userinfo
