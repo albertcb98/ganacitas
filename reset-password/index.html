@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Nueva contraseña | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow">
+    <div class="card p24">
+      <h1 class="h2">Nueva contraseña</h1>
+      <p class="muted">Introduce tu nueva contraseña.</p>
+
+      <form id="resetForm" style="margin-top:16px">
+        <div class="field">
+          <label>Nueva contraseña</label>
+          <input name="password" type="password" minlength="8" autocomplete="new-password" required />
+        </div>
+
+        <div class="field">
+          <label>Confirmar contraseña</label>
+          <input name="password2" type="password" minlength="8" autocomplete="new-password" required />
+        </div>
+
+        <button class="btn primary" type="submit">
+          Guardar contraseña
+        </button>
+      </form>
+
+      <div style="margin-top:14px">
+        <a class="muted" href="/login/">← Volver a iniciar sesión</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get("token");
+
+    function showToast(msg){
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=> t.style.display="none", 4000);
+    }
+
+    async function postJSON(url, payload){
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok){
+        throw new Error(data?.error || "Error");
+      }
+      return data;
+    }
+
+    if(!token){
+      showToast("Token inválido o ausente");
+    }
+
+    document.getElementById("resetForm").addEventListener("submit", async (e)=>{
+      e.preventDefault();
+
+      if(!token){
+        showToast("Token inválido");
+        return;
+      }
+
+      const fd = new FormData(e.target);
+      const pw1 = fd.get("password");
+      const pw2 = fd.get("password2");
+
+      if(pw1 !== pw2){
+        showToast("Las contraseñas no coinciden");
+        return;
+      }
+
+      try{
+        await postJSON("/api/auth/reset-password", {
+          token,
+          newPassword: pw1
+        });
+
+        showToast("Contraseña actualizada. Redirigiendo...");
+        setTimeout(()=> {
+          window.location.href = "/login/";
+        }, 1500);
+
+      }catch(err){
+        showToast(err.message);
+      }
+    });
+  </script>
+</body>
+</html>
