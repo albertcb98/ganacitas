@@ -5,7 +5,7 @@
 
 import { hashPassword } from "../_lib/password.js";
 
-const DEBUG_ERRORS = true; // <-- set to false after you fix the issue
+const DEBUG_ERRORS = false; // <-- set to false after you fix the issue
 
 function json(data, status = 200, extraHeaders = {}) {
   return new Response(JSON.stringify(data), {

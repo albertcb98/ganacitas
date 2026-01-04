@@ -21,11 +21,11 @@ export async function onRequestPost({ request, env }) {
   ).bind(email.toLowerCase().trim()).first();
 
   if (!row || !row.password_hash) {
-    return json({ error: "Credenciales incorrectas" }, 401);
+    return json({ error: "Contraseña incorrecta o usuario inexistente" }, 401);
   }
 
   const ok = await verifyPassword(password, row.password_hash);
-  if (!ok) return json({ error: "Credenciales incorrectas" }, 401);
+  if (!ok) return json({ error: "Contraseña incorrecta o usuario inexistente" }, 401);
 
   const token = await signJWT(env.JWT_SECRET, { sub: row.id, email: row.email });
   return json(
