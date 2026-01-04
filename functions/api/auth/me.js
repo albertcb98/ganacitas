@@ -9,11 +9,19 @@ function json(data, status = 200) {
 }
 
 export async function onRequestGet({ request, env }) {
+// ✅ ADD THESE LINES RIGHT HERE (top of handler)
+  if (!env.DB) return json({ error: "DB binding missing" }, 500);
+  if (!env.JWT_SECRET) return json({ error: "JWT_SECRET missing" }, 500);
   const cookies = parseCookies(request);
   const token = cookies.session;
   if (!token) return json({ error: "No session" }, 401);
 
-  const payload = await verifyJWT(env.JWT_SECRET, token);
+  let payload;
+try {
+  payload = await verifyJWT(env.JWT_SECRET, token);
+} catch {
+  return json({ error: "Invalid session" }, 401);
+}
   if (!payload?.sub) return json({ error: "Invalid session" }, 401);
 
   const user = await env.DB.prepare(
