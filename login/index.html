@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iniciar sesión | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow">
+    <div class="card p24">
+      <h1 class="h2">Iniciar sesión</h1>
+      <p class="muted">Accede a tu panel.</p>
+
+      <!-- Google first -->
+      <a class="btn primary" id="googleBtn" href="#">Continuar con Google</a>
+      <p class="muted" style="margin-top:10px">o inicia sesión con email</p>
+
+      <form id="loginForm" style="margin-top:14px">
+        <div class="field">
+          <label>Email</label>
+          <input name="email" type="email" required />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input name="password" type="password" minlength="8" required />
+        </div>
+        <button class="btn" type="submit">Entrar</button>
+      </form>
+
+      <div style="margin-top:12px">
+        <a class="muted" id="registerLink" href="/register/">¿No tienes cuenta? Crear cuenta</a>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <script>
+    function showToast(msg){
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
+    }
+
+    function getParam(name){
+      const p = new URLSearchParams(window.location.search);
+      return p.get(name);
+    }
+
+    (function(){
+      const next = getParam("next") || "/dashboard/";
+      const plan = getParam("plan");
+
+      let nextFinal = next;
+      if (plan) {
+        const u = new URL(nextFinal, window.location.origin);
+        u.searchParams.set("plan", plan);
+        nextFinal = u.pathname + u.search + u.hash;
+      }
+
+      const googleUrl = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
+      const btn = document.getElementById("googleBtn");
+      if (btn) btn.href = googleUrl;
+
+      const registerLink = document.getElementById("registerLink");
+      if (registerLink) {
+        const u2 = new URL("/register/", window.location.origin);
+        u2.searchParams.set("next", nextFinal);
+        if (plan) u2.searchParams.set("plan", plan);
+        registerLink.href = u2.pathname + u2.search;
+      }
+    })();
+
+    async function postJSON(url, payload){
+      const r = await fetch(url, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error || "Error");
+      return data;
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+
+      try{
+        await postJSON("/api/auth/login", payload);
+
+        const next = getParam("next") || "/dashboard/";
+        const plan = getParam("plan");
+        if (plan) {
+          const u = new URL(next, window.location.origin);
+          u.searchParams.set("plan", plan);
+          window.location.href = u.pathname + u.search + u.hash;
+        } else {
+          window.location.href = next;
+        }
+      }catch(err){
+        showToast(err.message);
+      }
+    });
+  </script>
+</body>
+</html>

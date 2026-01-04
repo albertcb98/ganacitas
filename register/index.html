@@ -12,6 +12,10 @@
       <h1 class="h2">Crear cuenta</h1>
       <p class="muted">Regístrate para acceder al panel y activar tu plan.</p>
 
+      <!-- Google first -->
+      <a class="btn primary" id="googleBtn" href="#">Continuar con Google</a>
+      <p class="muted" style="margin-top:10px">o crea una cuenta con email</p>
+
       <form id="regForm" style="margin-top:14px">
         <div class="field">
           <label>Email</label>
@@ -21,20 +25,58 @@
           <label>Contraseña</label>
           <input name="password" type="password" minlength="8" required />
         </div>
-        <button class="btn primary" type="submit">Crear cuenta</button>
+        <button class="btn" type="submit">Crear cuenta</button>
       </form>
 
       <div style="margin-top:12px">
-        <a class="muted" href="/login/">¿Ya tienes cuenta? Inicia sesión</a>
+        <a class="muted" id="loginLink" href="/login/">¿Ya tienes cuenta? Inicia sesión</a>
       </div>
-
-      <hr class="sep" />
-      <a class="btn" href="/api/auth/google/start">Continuar con Google</a>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
+
   <script>
+    function showToast(msg){
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
+    }
+
+    function getParam(name){
+      const p = new URLSearchParams(window.location.search);
+      return p.get(name);
+    }
+
+    // Build Google URL with next (and keep plan if present by embedding into next)
+    (function(){
+      const next = getParam("next") || "/dashboard/";
+      const plan = getParam("plan");
+
+      // If you want to preserve plan too, append it into next:
+      // e.g. /dashboard/?plan=recepcionista_esencial
+      let nextFinal = next;
+      if (plan) {
+        const u = new URL(nextFinal, window.location.origin);
+        u.searchParams.set("plan", plan);
+        nextFinal = u.pathname + u.search + u.hash;
+      }
+
+      const googleUrl = `/api/auth/google/start?next=${encodeURIComponent(nextFinal)}`;
+      const btn = document.getElementById("googleBtn");
+      if (btn) btn.href = googleUrl;
+
+      // Also keep next/plan if user switches to login
+      const loginLink = document.getElementById("loginLink");
+      if (loginLink) {
+        const u2 = new URL("/login/", window.location.origin);
+        u2.searchParams.set("next", nextFinal);
+        loginLink.href = u2.pathname + u2.search;
+      }
+    })();
+
     async function postJSON(url, payload){
       const r = await fetch(url, {
         method:"POST",
@@ -50,14 +92,22 @@
       e.preventDefault();
       const fd = new FormData(e.target);
       const payload = Object.fromEntries(fd.entries());
+
       try{
         await postJSON("/api/auth/register", payload);
-        window.location.href = "/dashboard/";
+
+        // Respect next param after registering
+        const next = getParam("next") || "/dashboard/";
+        const plan = getParam("plan");
+        if (plan) {
+          const u = new URL(next, window.location.origin);
+          u.searchParams.set("plan", plan);
+          window.location.href = u.pathname + u.search + u.hash;
+        } else {
+          window.location.href = next;
+        }
       }catch(err){
-        const t = document.getElementById("toast");
-        t.textContent = err.message;
-        t.style.display = "block";
-        setTimeout(()=> t.style.display="none", 3500);
+        showToast(err.message);
       }
     });
   </script>
