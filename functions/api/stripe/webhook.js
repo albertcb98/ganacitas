@@ -1,6 +1,5 @@
-import { timingSafeEqual } from "node:crypto";
+// /functions/api/stripe/webhook.js
 
-// --- helpers ---
 function json(data, status = 200) {
   return new Response(JSON.stringify(data), {
     status,
@@ -12,53 +11,67 @@ function toBytes(str) {
   return new TextEncoder().encode(str);
 }
 
+function bytesToHex(bytes) {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+// constant-time compare for *strings*
+function constantTimeEqual(a, b) {
+  if (typeof a !== "string" || typeof b !== "string") return false;
+  if (a.length !== b.length) return false;
+  let out = 0;
+  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return out === 0;
+}
+
 /**
- * Verify Stripe signature manually (works on Workers/Pages).
- * Stripe signature header: "t=...,v1=...,v0=..."
+ * Stripe signature header example:
+ * "t=1700000000,v1=abc...,v1=def..."
+ *
+ * Stripe signs: `${t}.${rawBody}` with HMAC SHA256 using webhook secret.
  */
-function verifyStripeSignature({ payloadRaw, sigHeader, secret }) {
+async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceSec = 5 * 60 }) {
   if (!sigHeader || !secret) return { ok: false, reason: "Missing signature or secret" };
 
   const parts = sigHeader.split(",").map((p) => p.trim());
   const tPart = parts.find((p) => p.startsWith("t="));
-  const v1Part = parts.find((p) => p.startsWith("v1="));
+  const v1Parts = parts.filter((p) => p.startsWith("v1="));
 
-  if (!tPart || !v1Part) return { ok: false, reason: "Bad signature header" };
+  if (!tPart || v1Parts.length === 0) return { ok: false, reason: "Bad signature header" };
 
-  const timestamp = tPart.slice(2);
-  const sig = v1Part.slice(3);
+  const timestamp = Number(tPart.slice(2));
+  if (!Number.isFinite(timestamp)) return { ok: false, reason: "Bad timestamp" };
 
-  // Stripe signs: `${timestamp}.${payload}`
+  // optional replay protection
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - timestamp) > toleranceSec) {
+    return { ok: false, reason: "Timestamp outside tolerance" };
+  }
+
   const signedPayload = `${timestamp}.${payloadRaw}`;
 
-  // HMAC-SHA256
-  // WebCrypto HMAC in Workers:
-  return (async () => {
-    const key = await crypto.subtle.importKey(
-      "raw",
-      toBytes(secret),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
+  const key = await crypto.subtle.importKey(
+    "raw",
+    toBytes(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
 
-    const digest = await crypto.subtle.sign("HMAC", key, toBytes(signedPayload));
-    const expected = Array.from(new Uint8Array(digest))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+  const digest = await crypto.subtle.sign("HMAC", key, toBytes(signedPayload));
+  const expectedHex = bytesToHex(new Uint8Array(digest));
 
-    // timing-safe compare
-    const a = toBytes(expected);
-    const b = toBytes(sig);
-    if (a.length !== b.length) return { ok: false, reason: "Signature length mismatch" };
+  // Stripe may send multiple v1 signatures — accept if ANY matches
+  for (const p of v1Parts) {
+    const sigHex = p.slice(3); // after "v1="
+    if (constantTimeEqual(expectedHex, sigHex)) return { ok: true };
+  }
 
-    // timingSafeEqual expects Buffer/Uint8Array
-    const ok = timingSafeEqual(new Uint8Array(a), new Uint8Array(b));
-    return { ok };
-  })();
+  return { ok: false, reason: "Signature mismatch" };
 }
 
-// --- main handler ---
 export async function onRequestPost({ request, env }) {
   if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "Missing STRIPE_WEBHOOK_SECRET" }, 500);
   if (!env.DB) return json({ error: "Missing D1 binding env.DB" }, 500);
@@ -72,8 +85,8 @@ export async function onRequestPost({ request, env }) {
     secret: env.STRIPE_WEBHOOK_SECRET,
   });
 
-  if (!verified?.ok) {
-    return json({ error: "Invalid signature", detail: verified?.reason || "verify failed" }, 400);
+  if (!verified.ok) {
+    return json({ error: "Invalid signature", detail: verified.reason }, 400);
   }
 
   let event;
@@ -86,11 +99,8 @@ export async function onRequestPost({ request, env }) {
   const type = event.type;
   const obj = event.data?.object;
 
-  // We will update user by client_reference_id from Checkout
-  // For subscription events, we’ll map via subscription->customer lookup stored at checkout.completed
   try {
     if (type === "checkout.session.completed") {
-      // Checkout Session object
       const session = obj;
 
       const userId = session.client_reference_id || null;
@@ -99,7 +109,6 @@ export async function onRequestPost({ request, env }) {
 
       if (!userId) return json({ ok: true, ignored: "missing client_reference_id" });
 
-      // If you want the price, expand line_items normally; here we store subscription id and customer id.
       const now = new Date().toISOString();
 
       await env.DB.prepare(
@@ -121,16 +130,12 @@ export async function onRequestPost({ request, env }) {
       const customerId = sub.customer;
       const subscriptionId = sub.id;
 
-      // Determine paid_status from subscription status
-      // Stripe statuses: active, trialing, past_due, canceled, unpaid, incomplete, incomplete_expired, paused
       let paid_status = "free";
       if (sub.status === "active" || sub.status === "trialing") paid_status = "active";
       else if (sub.status === "past_due" || sub.status === "unpaid") paid_status = "past_due";
       else if (sub.status === "canceled" || sub.status === "incomplete_expired") paid_status = "canceled";
 
-      // Try to capture price id from first item
       const priceId = sub.items?.data?.[0]?.price?.id || null;
-
       const now = new Date().toISOString();
 
       await env.DB.prepare(
@@ -199,7 +204,6 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: true });
     }
 
-    // Ignore any other events
     return json({ ok: true, ignored: type });
   } catch (e) {
     return json({ error: "Webhook handler error", detail: String(e?.message || e) }, 500);
