@@ -82,9 +82,12 @@ console.log("RESET password type:", typeof newPassword);
   try {
     newHash = await hashPassword(newPassword);
   } catch (e) {
-    console.log("PASSWORD HASH ERROR:", e);
-    return json({ error: "Error al procesar la contraseña" }, 500);
-  }
+  console.log("PASSWORD HASH ERROR name:", e?.name);
+  console.log("PASSWORD HASH ERROR message:", e?.message);
+  console.log("PASSWORD HASH ERROR stack:", e?.stack);
+  console.log("PASSWORD HASH ERROR raw:", JSON.stringify(e));
+  return json({ error: "Error al procesar la contraseña" }, 500);
+}
 
   try {
     await env.DB.prepare(
