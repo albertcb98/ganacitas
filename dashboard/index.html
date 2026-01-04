@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Dashboard | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow">
+    <div class="nav">
+      <a class="brand" href="/"><span>GanaCitas</span></a>
+      <button class="btn small" id="logoutBtn">Salir</button>
+    </div>
+
+    <div class="card p24">
+      <h1 class="h2">Tu panel</h1>
+      <p class="muted" id="userLine">Cargando…</p>
+
+      <div id="freeBox" style="display:none; margin-top:14px">
+        <div class="pill">Estado: <span class="code">free</span></div>
+        <p class="muted" style="margin-top:10px">
+          Tu cuenta está creada, pero todavía no tienes un plan activo.
+        </p>
+        <a class="btn primary" href="/asistente-telefonico/#precios" style="margin-top:10px">
+          Activar plan
+        </a>
+      </div>
+
+      <div id="paidBox" style="display:none; margin-top:14px">
+        <div class="pill">Estado: <span class="code">active</span></div>
+        <p class="muted" style="margin-top:10px">
+          Próximo paso: configurar tu número, calendario y WhatsApp.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script>
+    async function getJSON(url){
+      const r = await fetch(url);
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error || "No autorizado");
+      return data;
+    }
+    async function postJSON(url, payload){
+      const r = await fetch(url, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload || {})
+      });
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error || "Error");
+      return data;
+    }
+
+    (async ()=>{
+      try{
+        const me = await getJSON("/api/auth/me");
+        document.getElementById("userLine").textContent =
+          `Sesión: ${me.user.email} • proveedor: ${me.user.auth_provider}`;
+
+        if(me.user.paid_status === "active"){
+          document.getElementById("paidBox").style.display = "block";
+        } else {
+          document.getElementById("freeBox").style.display = "block";
+        }
+      }catch(e){
+        window.location.href = "/login/";
+      }
+    })();
+
+    document.getElementById("logoutBtn").addEventListener("click", async ()=>{
+      try{
+        await postJSON("/api/auth/logout");
+        window.location.href = "/login/";
+      }catch(e){}
+    });
+  </script>
+</body>
+</html>

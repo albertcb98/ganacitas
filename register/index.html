@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Crear cuenta | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow">
+    <div class="card p24">
+      <h1 class="h2">Crear cuenta</h1>
+      <p class="muted">Regístrate para acceder al panel y activar tu plan.</p>
+
+      <form id="regForm" style="margin-top:14px">
+        <div class="field">
+          <label>Email</label>
+          <input name="email" type="email" required />
+        </div>
+        <div class="field">
+          <label>Contraseña</label>
+          <input name="password" type="password" minlength="8" required />
+        </div>
+        <button class="btn primary" type="submit">Crear cuenta</button>
+      </form>
+
+      <div style="margin-top:12px">
+        <a class="muted" href="/login/">¿Ya tienes cuenta? Inicia sesión</a>
+      </div>
+
+      <hr class="sep" />
+      <a class="btn" href="/api/auth/google/start">Continuar con Google</a>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+  <script>
+    async function postJSON(url, payload){
+      const r = await fetch(url, {
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(payload)
+      });
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error || "Error");
+      return data;
+    }
+
+    document.getElementById("regForm").addEventListener("submit", async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+      try{
+        await postJSON("/api/auth/register", payload);
+        window.location.href = "/dashboard/";
+      }catch(err){
+        const t = document.getElementById("toast");
+        t.textContent = err.message;
+        t.style.display = "block";
+        setTimeout(()=> t.style.display="none", 3500);
+      }
+    });
+  </script>
+</body>
+</html>

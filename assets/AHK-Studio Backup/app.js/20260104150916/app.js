@@ -345,13 +345,15 @@ function attachStripeHandlers() {
       const plan = btn.getAttribute("data-pay-link");
       if (!plan) return;
 
+      // 1) require login
       const me = await getMe();
       if (!me) {
-        const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
+        const next = encodeURIComponent(window.location.pathname + window.location.hash);
         window.location.href = `/register/?next=${next}&plan=${encodeURIComponent(plan)}`;
         return;
       }
 
+      // 2) create checkout
       btn.disabled = true;
       const original = btn.textContent;
       btn.textContent = "Redirigiendo…";
@@ -370,7 +372,6 @@ function attachStripeHandlers() {
     });
   });
 }
-
 document.addEventListener("DOMContentLoaded", () => {
   attachDemoHandlers();
   attachStripeHandlers();

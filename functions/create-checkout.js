@@ -1,46 +1,62 @@
+import { parseCookies } from "./api/_lib/cookies.js";
+import { verifyJWT } from "./api/_lib/jwt.js";
+
+function json(data, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 export async function onRequestPost({ request, env }) {
-  const { plan } = await request.json();
+  // 1) Require session
+  const cookies = parseCookies(request);
+  const token = cookies.session;
+  if (!token) return json({ error: "Unauthorized" }, 401);
 
-  if (!env.STRIPE_SECRET_KEY) {
-    return new Response(JSON.stringify({ error: "Missing STRIPE_SECRET_KEY" }), { status: 500 });
-  }
+  const payload = await verifyJWT(env.JWT_SECRET, token);
+  if (!payload?.sub) return json({ error: "Unauthorized" }, 401);
 
-  // Map your button keys -> Stripe Price IDs
+  const user = await env.DB.prepare(
+    "SELECT id, email FROM users WHERE id = ?"
+  ).bind(payload.sub).first();
+
+  if (!user) return json({ error: "Unauthorized" }, 401);
+
+  // 2) Plan from frontend
+  const { plan } = await request.json().catch(() => ({}));
+  if (!plan) return json({ error: "Missing plan" }, 400);
+
+  if (!env.STRIPE_SECRET_KEY) return json({ error: "Missing STRIPE_SECRET_KEY" }, 500);
+
   const PLAN_MAP = {
-   recepcionista_esencial: {
-    recurring: env.STRIPE_PRICE_ESENCIAL,
-    setup: env.STRIPE_PRICE_SETUP,
-  },
-  recepcionista_profesional: {
-    recurring: env.STRIPE_PRICE_PROFESIONAL,
-    setup: env.STRIPE_PRICE_SETUP,
-  },
-  recepcionista_empresa: {
-    recurring: env.STRIPE_PRICE_EMPRESA,
-    setup: env.STRIPE_PRICE_SETUP,
-  },
+    recepcionista_esencial: { recurring: env.STRIPE_PRICE_ESENCIAL, setup: env.STRIPE_PRICE_SETUP },
+    recepcionista_profesional: { recurring: env.STRIPE_PRICE_PROFESIONAL, setup: env.STRIPE_PRICE_SETUP },
+    recepcionista_empresa: { recurring: env.STRIPE_PRICE_EMPRESA, setup: env.STRIPE_PRICE_SETUP },
   };
 
   const cfg = PLAN_MAP[plan];
-  if (!cfg) {
-    return new Response(JSON.stringify({ error: "Invalid plan" }), { status: 400 });
-  }
+  if (!cfg?.recurring || !cfg?.setup) return json({ error: "Invalid plan config" }, 400);
 
   const siteUrl = env.SITE_URL || new URL(request.url).origin;
 
-const params = new URLSearchParams({
-  mode: "subscription",
-  success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
-  cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
+  const params = new URLSearchParams({
+    mode: "subscription",
+    success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+    cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
 
-  // recurring subscription
-  "line_items[0][price]": cfg.recurring,
-  "line_items[0][quantity]": "1",
+    // IMPORTANT: tie Stripe session to your user
+    client_reference_id: user.id,
+    customer_email: user.email,
 
-  // one-time setup fee (charged on first invoice)
-  "line_items[1][price]": cfg.setup,
-  "line_items[1][quantity]": "1",
-});
+    // recurring subscription
+    "line_items[0][price]": cfg.recurring,
+    "line_items[0][quantity]": "1",
+
+    // one-time setup fee (charged at checkout)
+    "line_items[1][price]": cfg.setup,
+    "line_items[1][quantity]": "1",
+  });
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
@@ -54,16 +70,8 @@ const params = new URLSearchParams({
   const data = await stripeRes.json();
 
   if (!stripeRes.ok) {
-    return new Response(JSON.stringify({
-    stripe_status: stripeRes.status,
-    stripe_error: data
-  }), {
-    status: 400,
-    headers: { "Content-Type": "application/json" }
-  });
+    return json({ stripe_status: stripeRes.status, stripe_error: data }, 400);
   }
 
-  return new Response(JSON.stringify({ url: data.url }), {
-    headers: { "Content-Type": "application/json" },
-  });
+  return json({ url: data.url });
 }
