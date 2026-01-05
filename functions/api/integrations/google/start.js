@@ -53,7 +53,7 @@ export async function onRequestGet({ request, env }) {
   // Calendar scopes
   const scopes = [
     "https://www.googleapis.com/auth/calendar.events",
-    "https://www.googleapis.com/auth/calendar.readonly"
+    "https://www.googleapis.com/auth/spreadsheets"
   ].join(" ");
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");

@@ -17,6 +17,25 @@
       <h1 class="h2">Tu panel</h1>
       <p class="muted" id="userLine">Cargando…</p>
 
+      <!-- Integrations (shown for both free + paid once logged in) -->
+      <div id="integrationsBox" class="card p24" style="margin-top:14px; display:none">
+        <div class="h3">Integraciones</div>
+
+        <div class="pill" style="margin-top:12px">
+          Google Calendar: <span class="code" id="gcalStatusTxt">Cargando…</span>
+        </div>
+
+        <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
+          <a class="btn small" id="gcalConnectBtn" href="/api/integrations/google/start?next=/dashboard/">
+            Conectar Google Calendar
+          </a>
+        </div>
+
+        <p class="muted" style="margin-top:10px; font-size:12px">
+          Conecta tu calendario para que el asistente pueda crear y modificar citas automáticamente.
+        </p>
+      </div>
+
       <!-- FREE -->
       <div id="freeBox" style="display:none; margin-top:14px">
         <div class="pill">Estado: <span class="code">free</span></div>
@@ -50,17 +69,6 @@
           </div>
 
           <p class="muted" style="margin-top:10px; font-size:12px" id="usageHint"></p>
-        </div>
-
-        <!-- Integraciones -->
-        <div class="card p24" style="margin-top:14px">
-          <div class="h3">Integraciones</div>
-          <div class="muted" id="gcalStatus" style="margin-top:8px">Cargando…</div>
-          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
-            <a class="btn small" id="gcalConnectBtn" href="/api/integrations/google/start?next=/dashboard/">
-              Conectar Google Calendar
-            </a>
-          </div>
         </div>
 
         <div class="card p24" style="margin-top:14px">
@@ -108,8 +116,8 @@
             <button class="btn" id="manualTopupBtn">Recargar manualmente</button>
           </div>
         </div>
-
       </div>
+      <!-- /PAID -->
     </div>
   </div>
 
@@ -167,9 +175,23 @@
       hint.textContent = "Tu agente está activo y atendiendo llamadas.";
     }
 
+    function setCalendarUI(connected){
+      const txt = document.getElementById("gcalStatusTxt");
+      const btn = document.getElementById("gcalConnectBtn");
+
+      if (connected) {
+        txt.textContent = "Conectado ✅";
+        btn.textContent = "Reconectar Google Calendar";
+      } else {
+        txt.textContent = "No conectado ⚠️";
+        btn.textContent = "Conectar Google Calendar";
+      }
+    }
+
     async function loadDashboard(){
       const s = await getJSON("/api/dashboard/summary");
 
+      // Paid area values (safe even if you call it and you're free; but we call only for paid)
       document.getElementById("planName").textContent = s.planLabel ?? "—";
       document.getElementById("callsIncluded").textContent = s.callsIncluded ?? 0;
       document.getElementById("callsRemaining").textContent = s.callsRemaining ?? 0;
@@ -189,19 +211,13 @@
         usageHint.textContent = "";
       }
 
-      // ✅ Google Calendar status
-      const el = document.getElementById("gcalStatus");
-      const btn = document.getElementById("gcalConnectBtn");
-      if (s.googleCalendarConnected) {
-        el.textContent = "✅ Google Calendar conectado";
-        btn.textContent = "Reconectar";
-      } else {
-        el.textContent = "⚠️ Google Calendar no conectado";
-        btn.textContent = "Conectar Google Calendar";
-      }
+      // Calendar status (works for paid too)
+      setCalendarUI(!!s.googleCalendarConnected);
+
+      return s;
     }
 
-    // Wire UI actions
+    // Wire UI actions (paid-only controls; won't be visible for free anyway)
     document.getElementById("autoTopupEnabled").addEventListener("change", async (e)=>{
       try{
         const enabled = e.target.checked;
@@ -269,15 +285,30 @@
         document.getElementById("userLine").textContent =
           `Sesión: ${me.user.email} • proveedor: ${me.user.auth_provider}`;
 
+        // show integrations for anyone logged in
+        document.getElementById("integrationsBox").style.display = "block";
+
         if(me.user.paid_status === "active"){
           document.getElementById("paidBox").style.display = "block";
           try{
             await loadDashboard();
           }catch(e){
             showToast("No se pudo cargar el panel (falta /api/dashboard/summary).");
+            // still keep integration box visible
+            setCalendarUI(false);
           }
         } else {
           document.getElementById("freeBox").style.display = "block";
+
+          // For free users, we still want calendar status if possible.
+          // If your /api/dashboard/summary returns googleCalendarConnected even for free,
+          // this will show correct status. Otherwise it will just say "No conectado".
+          try{
+            const s = await getJSON("/api/dashboard/summary");
+            setCalendarUI(!!s.googleCalendarConnected);
+          }catch{
+            setCalendarUI(false);
+          }
         }
       }catch(e){
         window.location.href = "/login/";
