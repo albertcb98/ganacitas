@@ -76,6 +76,14 @@ function monthCycleRangeISO() {
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
+async function getGoogleSheetsConnected(env, userId) {
+  // If you store ALL google tokens in the same row/provider (google_calendar),
+  // then Sheets is connected whenever that refresh_token exists.
+  const row = await env.DB.prepare(
+    "SELECT id, refresh_token FROM user_integrations WHERE user_id=? AND provider='google_calendar' LIMIT 1"
+  ).bind(userId).first();
+  return !!(row && row.refresh_token);
+}
 async function getGoogleCalendarConnected(env, userId) {
   const row = await env.DB.prepare(
     "SELECT id, refresh_token FROM user_integrations WHERE user_id=? AND provider='google_calendar' LIMIT 1"
@@ -148,6 +156,7 @@ const token = bearer || getCookie(request, "session");
   if (!user) return json({ error: "No autorizado" }, 401);
 
   const googleCalendarConnected = await getGoogleCalendarConnected(env, user.id);
+const googleSheetsConnected = await getGoogleSheetsConnected(env, user.id);
 
   if (user.paid_status !== "active") {
     return json({
@@ -161,6 +170,7 @@ const token = bearer || getCookie(request, "session");
       autoTopupEnabled: false,
       autoTopupAmountEur: 10,
       googleCalendarConnected,
+      googleSheetsConnected,
       vapiAssistantLinked: !!user.vapi_assistant_id,
     });
   }
