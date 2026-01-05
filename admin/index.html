@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="nav">
+      <a class="brand" href="/"><span>GanaCitas</span></a>
+      <a class="btn small" href="/dashboard/">Volver</a>
+    </div>
+
+    <div class="card p24">
+      <h1 class="h2">Admin</h1>
+      <p class="muted" id="status">Cargando…</p>
+
+      <div style="overflow:auto; margin-top:12px">
+        <table class="table" id="t" style="min-width:900px">
+          <thead>
+            <tr>
+              <th>Email</th>
+              <th>Plan</th>
+              <th>Estado</th>
+              <th>Agente</th>
+              <th>Gastado €</th>
+              <th>Sync</th>
+              <th>Ciclo</th>
+              <th>Vapi</th>
+              <th>MCP</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+<script>
+async function getJSON(url){
+  const r = await fetch(url, { credentials:"include" });
+  const data = await r.json().catch(()=> ({}));
+  if(!r.ok) throw new Error(data?.error || "Error");
+  return data;
+}
+
+function td(s){
+  const el = document.createElement("td");
+  el.textContent = s == null ? "" : String(s);
+  return el;
+}
+
+(async ()=>{
+  try{
+    const { users } = await getJSON("/api/admin/users");
+    document.getElementById("status").textContent = `Usuarios: ${users.length}`;
+
+    const tbody = document.querySelector("#t tbody");
+    tbody.innerHTML = "";
+
+    for(const u of users){
+      const tr = document.createElement("tr");
+      tr.appendChild(td(u.email));
+      tr.appendChild(td(u.plan || "free"));
+      tr.appendChild(td(u.paid_status));
+      tr.appendChild(td(u.agent_status));
+      tr.appendChild(td(u.spent_eur_this_cycle ?? 0));
+      tr.appendChild(td(u.last_usage_sync_at || ""));
+      tr.appendChild(td((u.cycle_start_at||"") + " → " + (u.cycle_end_at||"")));
+      tr.appendChild(td(u.vapi_assistant_id ? "✅" : "—"));
+      tr.appendChild(td(u.mcp_url ? "✅" : "—"));
+      tbody.appendChild(tr);
+    }
+  }catch(e){
+    document.getElementById("status").textContent = "No autorizado (solo admin).";
+  }
+})();
+</script>
+</body>
+</html>
