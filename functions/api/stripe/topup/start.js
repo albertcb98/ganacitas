@@ -62,6 +62,8 @@ function priceForAmount(env, amount) {
 
 export async function onRequestGet({ request, env }) {
   if (!env.STRIPE_SECRET_KEY) return new Response("Missing STRIPE_SECRET_KEY", { status: 500 });
+  console.log("[topup/start] STRIPE_SECRET_KEY prefix:", (env.STRIPE_SECRET_KEY || "").slice(0, 7));
+  console.log("[topup/start] Host:", new URL(request.url).host);
   if (!env.JWT_SECRET) return new Response("Missing JWT_SECRET", { status: 500 });
   if (!env.SITE_URL) return new Response("Missing SITE_URL", { status: 500 });
 
