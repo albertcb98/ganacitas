@@ -46,7 +46,7 @@ async function sendResetEmail({ env, toEmail, resetUrl }) {
     return;
   }
 
-  const fromName = env.FROM_NAME
+  const fromName = env.FROM_NAME || "GanaCitas";
   const payload = {
      from: `${fromName} <${env.FROM_EMAIL}>`,
     to: [toEmail],

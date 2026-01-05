@@ -17,6 +17,7 @@
       <h1 class="h2">Tu panel</h1>
       <p class="muted" id="userLine">Cargando…</p>
 
+      <!-- FREE -->
       <div id="freeBox" style="display:none; margin-top:14px">
         <div class="pill">Estado: <span class="code">free</span></div>
         <p class="muted" style="margin-top:10px">
@@ -27,23 +28,98 @@
         </a>
       </div>
 
+      <!-- PAID -->
       <div id="paidBox" style="display:none; margin-top:14px">
         <div class="pill">Estado: <span class="code">active</span></div>
-        <p class="muted" style="margin-top:10px">
-          Próximo paso: configurar tu número, calendario y WhatsApp.
-        </p>
+
+        <div style="margin-top:12px">
+          <div class="pill">Plan: <span class="code" id="planName">—</span></div>
+        </div>
+
+        <div style="margin-top:12px" class="card p24">
+          <div class="h3">
+            Estado del agente:
+            <span id="agentDot">🟡</span>
+            <span id="agentStatusTxt">En preparación</span>
+          </div>
+          <p class="muted" style="margin-top:6px" id="agentHint">Estamos configurando tu asistente.</p>
+
+          <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px">
+            <div class="pill">Llamadas contratadas: <span class="code" id="callsIncluded">0</span></div>
+            <div class="pill">Llamadas restantes: <span class="code" id="callsRemaining">0</span></div>
+          </div>
+
+          <p class="muted" style="margin-top:10px; font-size:12px" id="usageHint"></p>
+        </div>
+
+        <div class="card p24" style="margin-top:14px">
+          <div class="h3">Recordatorios</div>
+
+          <label style="display:flex; gap:10px; align-items:center; margin-top:10px">
+            <input type="checkbox" id="notify50" />
+            <span>Enviar recordatorio al llegar al 50% de consumo</span>
+          </label>
+
+          <label style="display:flex; gap:10px; align-items:center; margin-top:10px">
+            <input type="checkbox" id="notify80" />
+            <span>Enviar recordatorio al llegar al 80% de consumo</span>
+          </label>
+
+          <button class="btn small" id="saveNotifBtn" style="margin-top:12px">Guardar</button>
+        </div>
+
+        <div class="card p24" style="margin-top:14px">
+          <div class="h3">Al quedarte sin llamadas</div>
+
+          <label style="display:flex; gap:10px; align-items:center; margin-top:10px">
+            <input type="checkbox" id="autoTopupEnabled" />
+            <span>Recargar automáticamente</span>
+          </label>
+
+          <div id="topupOptions" style="margin-top:12px; display:none">
+            <div style="display:flex; gap:10px; flex-wrap:wrap">
+              <button type="button" class="btn small" data-topup="10">10€ (≈33 llamadas)</button>
+              <button type="button" class="btn small" data-topup="20">20€ (≈66 llamadas)</button>
+              <button type="button" class="btn small" data-topup="50">50€ (≈166 llamadas)</button>
+            </div>
+
+            <div style="margin-top:10px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+              <input id="topupCustom" type="number" min="5" step="1" placeholder="Custom €" style="max-width:140px" />
+              <button type="button" class="btn small" id="setCustomBtn">Usar custom</button>
+            </div>
+
+            <div class="muted" style="margin-top:10px;font-size:12px">
+              Nota: la recarga automática requiere un método de pago guardado (Stripe).
+            </div>
+          </div>
+
+          <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
+            <button class="btn" id="manualTopupBtn">Recargar manualmente</button>
+          </div>
+        </div>
+
       </div>
     </div>
   </div>
 
   <div id="toast" class="toast"></div>
+
   <script>
+    function showToast(msg){
+      const t = document.getElementById("toast");
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
+    }
+
     async function getJSON(url){
       const r = await fetch(url, { credentials: "include" });
       const data = await r.json().catch(()=> ({}));
       if(!r.ok) throw new Error(data?.error || "No autorizado");
       return data;
     }
+
     async function postJSON(url, payload){
       const r = await fetch(url, {
         method:"POST",
@@ -56,6 +132,116 @@
       return data;
     }
 
+    function setAgentUI(status, remaining){
+      const dot = document.getElementById("agentDot");
+      const txt = document.getElementById("agentStatusTxt");
+      const hint = document.getElementById("agentHint");
+
+      if(status === "preparacion"){
+        dot.textContent = "🟡";
+        txt.textContent = "En preparación";
+        hint.textContent = "Estamos configurando tu asistente (número, calendario y WhatsApp).";
+        return;
+      }
+
+      if(remaining <= 0 || status === "pausado"){
+        dot.textContent = "🔴";
+        txt.textContent = "Pausado";
+        hint.textContent = "Sin llamadas disponibles. Puedes recargar para reactivar el agente.";
+        return;
+      }
+
+      dot.textContent = "🟢";
+      txt.textContent = "Activo";
+      hint.textContent = "Tu agente está activo y atendiendo llamadas.";
+    }
+
+    async function loadDashboard(){
+      const s = await getJSON("/api/dashboard/summary");
+
+      document.getElementById("planName").textContent = s.planLabel ?? "—";
+      document.getElementById("callsIncluded").textContent = s.callsIncluded ?? 0;
+      document.getElementById("callsRemaining").textContent = s.callsRemaining ?? 0;
+
+      setAgentUI(s.agentStatus || "preparacion", Number(s.callsRemaining || 0));
+
+      document.getElementById("notify50").checked = !!s.notify50;
+      document.getElementById("notify80").checked = !!s.notify80;
+
+      document.getElementById("autoTopupEnabled").checked = !!s.autoTopupEnabled;
+      document.getElementById("topupOptions").style.display = s.autoTopupEnabled ? "block" : "none";
+
+      const usageHint = document.getElementById("usageHint");
+      if (s.spentEurThisCycle != null) {
+        usageHint.textContent = `Consumo estimado este ciclo: €${Number(s.spentEurThisCycle).toFixed(2)}.`;
+      } else {
+        usageHint.textContent = "";
+      }
+    }
+
+    // Wire UI actions
+    document.getElementById("autoTopupEnabled").addEventListener("change", async (e)=>{
+      try{
+        const enabled = e.target.checked;
+        document.getElementById("topupOptions").style.display = enabled ? "block" : "none";
+        await postJSON("/api/dashboard/settings", { autoTopupEnabled: enabled });
+        showToast("Guardado");
+      }catch(err){
+        showToast(err?.message || "Error");
+      }
+    });
+
+    document.getElementById("saveNotifBtn").addEventListener("click", async ()=>{
+      try{
+        await postJSON("/api/dashboard/settings", {
+          notify50: document.getElementById("notify50").checked,
+          notify80: document.getElementById("notify80").checked,
+        });
+        showToast("Guardado");
+      }catch(err){
+        showToast(err?.message || "Error");
+      }
+    });
+
+    document.querySelectorAll("[data-topup]").forEach(btn=>{
+      btn.addEventListener("click", async ()=>{
+        try{
+          const amount = parseInt(btn.getAttribute("data-topup"), 10);
+          await postJSON("/api/dashboard/settings", { autoTopupAmountEur: amount });
+          showToast(`Recarga automática: €${amount}`);
+        }catch(err){
+          showToast(err?.message || "Error");
+        }
+      });
+    });
+
+    document.getElementById("setCustomBtn").addEventListener("click", async ()=>{
+      try{
+        const v = parseInt(document.getElementById("topupCustom").value, 10);
+        if(!Number.isFinite(v) || v < 5){
+          showToast("Introduce un importe válido (>= 5€).");
+          return;
+        }
+        await postJSON("/api/dashboard/settings", { autoTopupAmountEur: v });
+        showToast(`Recarga automática: €${v}`);
+      }catch(err){
+        showToast(err?.message || "Error");
+      }
+    });
+
+    document.getElementById("manualTopupBtn").addEventListener("click", ()=>{
+      // For now, send them to pricing / checkout flow
+      window.location.href = "/asistente-telefonico/#precios";
+    });
+
+    document.getElementById("logoutBtn").addEventListener("click", async ()=>{
+      try{
+        await postJSON("/api/auth/logout");
+        window.location.href = "/login/";
+      }catch(e){}
+    });
+
+    // Boot
     (async ()=>{
       try{
         const me = await getJSON("/api/auth/me");
@@ -64,6 +250,11 @@
 
         if(me.user.paid_status === "active"){
           document.getElementById("paidBox").style.display = "block";
+          try{
+            await loadDashboard();
+          }catch(e){
+            showToast("No se pudo cargar el panel (falta /api/dashboard/summary).");
+          }
         } else {
           document.getElementById("freeBox").style.display = "block";
         }
@@ -71,13 +262,6 @@
         window.location.href = "/login/";
       }
     })();
-
-    document.getElementById("logoutBtn").addEventListener("click", async ()=>{
-      try{
-        await postJSON("/api/auth/logout");
-        window.location.href = "/login/";
-      }catch(e){}
-    });
   </script>
 </body>
 </html>
