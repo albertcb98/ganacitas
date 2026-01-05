@@ -76,11 +76,10 @@ function monthCycleRangeISO() {
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
-async function getGoogleCalendarConnected(env, userId) {
-  const row = await env.DB.prepare(
-    "SELECT id, refresh_token FROM user_integrations WHERE user_id=? AND provider='google_calendar' LIMIT 1"
+async function getGoogleIntegration(env, userId) {
+  return await env.DB.prepare(
+    "SELECT refresh_token, scope FROM user_integrations WHERE user_id=? AND provider='google_calendar' LIMIT 1"
   ).bind(userId).first();
-  return !!(row && row.refresh_token);
 }
 
 async function refreshSpentFromVapi({ env, user }) {
@@ -147,8 +146,15 @@ const token = bearer || getCookie(request, "session");
 
   if (!user) return json({ error: "No autorizado" }, 401);
 
-  const googleCalendarConnected = await getGoogleCalendarConnected(env, user.id);
-const googleSheetsConnected = googleCalendarConnected;
+const integ = await getGoogleIntegration(env, user.id);
+
+const googleCalendarConnected = !!(integ && integ.refresh_token);
+
+// only true if user granted sheets scope
+const googleSheetsConnected =
+  !!(integ && integ.refresh_token) &&
+  typeof integ.scope === "string" &&
+  integ.scope.includes("https://www.googleapis.com/auth/spreadsheets");
 
   if (user.paid_status !== "active") {
     return json({

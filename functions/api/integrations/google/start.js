@@ -63,6 +63,7 @@ export async function onRequestGet({ request, env }) {
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("scope", scopes);
   authUrl.searchParams.set("state", state);
+authUrl.searchParams.set("include_granted_scopes", "true");
 
   // IMPORTANT: to get refresh_token reliably:
   authUrl.searchParams.set("access_type", "offline");
