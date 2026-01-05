@@ -17,25 +17,26 @@
       <h1 class="h2">Tu panel</h1>
       <p class="muted" id="userLine">Cargando…</p>
 
-      <!-- Integrations (shown for both free + paid once logged in) -->
+      <!-- Integraciones (visible para free y paid) -->
       <div id="integrationsBox" class="card p24" style="margin-top:14px; display:none">
         <div class="h3">Integraciones</div>
 
         <div class="pill" style="margin-top:12px">
           Google Calendar: <span class="code" id="gcalStatusTxt">Cargando…</span>
         </div>
-<div class="pill" style="margin-top:12px">
-  Google Sheets (CRM): <span class="code" id="gsheetsStatusTxt">Cargando…</span>
-</div>
+
+        <div class="pill" style="margin-top:12px">
+          Google Sheets (CRM): <span class="code" id="gsheetsStatusTxt">Cargando…</span>
+        </div>
 
         <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
           <a class="btn small" id="gcalConnectBtn" href="/api/integrations/google/start?next=/dashboard/">
-            Conectar Google Calendar
+            Conectar / Reconectar Google
           </a>
         </div>
 
         <p class="muted" style="margin-top:10px; font-size:12px">
-          Conecta tu calendario para que el asistente pueda crear y modificar citas automáticamente.
+          Conecta Google para que el asistente pueda gestionar citas y tu CRM (Sheets) automáticamente.
         </p>
       </div>
 
@@ -77,14 +78,14 @@
         <div class="card p24" style="margin-top:14px">
           <div class="h3">Recordatorios</div>
 
-        <label style="display:flex; justify-content:space-between; align-items:center; margin-top:10px">
-  <span>Enviar recordatorio al llegar al 50% de consumo</span>
-  <input type="checkbox" id="notify50" />
-</label>
+          <label style="display:flex; justify-content:space-between; gap:16px; align-items:center; margin-top:10px">
+            <span>Enviar recordatorio al llegar al 50% de consumo</span>
+            <input type="checkbox" id="notify50" />
+          </label>
 
-          <label style="display:flex; justify-content:space-between; align-items:center; margin-top:10px">
-            <input type="checkbox" id="notify80" />
+          <label style="display:flex; justify-content:space-between; gap:16px; align-items:center; margin-top:10px">
             <span>Enviar recordatorio al llegar al 80% de consumo</span>
+            <input type="checkbox" id="notify80" />
           </label>
 
           <button class="btn small" id="saveNotifBtn" style="margin-top:12px">Guardar</button>
@@ -93,9 +94,9 @@
         <div class="card p24" style="margin-top:14px">
           <div class="h3">Al quedarte sin llamadas</div>
 
-          <label style="display:flex; justify-content:space-between; align-items:center; margin-top:10px">
-            <input type="checkbox" id="autoTopupEnabled" />
+          <label style="display:flex; justify-content:space-between; gap:16px; align-items:center; margin-top:10px">
             <span>Recargar automáticamente</span>
+            <input type="checkbox" id="autoTopupEnabled" />
           </label>
 
           <div id="topupOptions" style="margin-top:12px; display:none">
@@ -110,13 +111,31 @@
               <button type="button" class="btn small" id="setCustomBtn">Usar custom</button>
             </div>
 
-            <div class="muted" style="margin-top:10px;font-size:12px">
-              Nota: la recarga automática requiere un método de pago guardado (Stripe).
+            <div class="muted" style="margin-top:10px; font-size:12px">
+              Nota: la recarga automática requiere método de pago guardado (lo activaremos más adelante).
             </div>
           </div>
 
           <div style="margin-top:14px; display:flex; gap:10px; flex-wrap:wrap">
             <button class="btn" id="manualTopupBtn">Recargar manualmente</button>
+          </div>
+
+          <!-- Manual topup buttons -->
+          <div id="manualTopupBox" class="card p24" style="margin-top:12px; display:none">
+            <div class="h3">Recarga manual</div>
+            <p class="muted" style="margin-top:6px">
+              Elige un importe para añadir llamadas a tu cuenta.
+            </p>
+
+            <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
+              <button type="button" class="btn small" data-manual-topup="10">Añadir 10€ (≈33 llamadas)</button>
+              <button type="button" class="btn small" data-manual-topup="20">Añadir 20€ (≈66 llamadas)</button>
+              <button type="button" class="btn small" data-manual-topup="50">Añadir 50€ (≈160 llamadas)</button>
+            </div>
+
+            <div class="muted" style="margin-top:10px; font-size:12px">
+              Te redirigiremos a Stripe para completar el pago.
+            </div>
           </div>
         </div>
       </div>
@@ -184,22 +203,22 @@
 
       if (connected) {
         txt.textContent = "Conectado ✅";
-        btn.textContent = "Reconectar Google Calendar";
+        btn.textContent = "Reconectar Google";
       } else {
         txt.textContent = "No conectado ⚠️";
-        btn.textContent = "Conectar Google Calendar";
+        btn.textContent = "Conectar Google";
       }
     }
-function setSheetsUI(connected){
-  const txt = document.getElementById("gsheetsStatusTxt");
-  if (!txt) return;
 
-  txt.textContent = connected ? "Conectado ✅" : "No conectado ⚠️";
-}
+    function setSheetsUI(connected){
+      const txt = document.getElementById("gsheetsStatusTxt");
+      if (!txt) return;
+      txt.textContent = connected ? "Conectado ✅" : "No conectado ⚠️";
+    }
+
     async function loadDashboard(){
       const s = await getJSON("/api/dashboard/summary");
 
-      // Paid area values (safe even if you call it and you're free; but we call only for paid)
       document.getElementById("planName").textContent = s.planLabel ?? "—";
       document.getElementById("callsIncluded").textContent = s.callsIncluded ?? 0;
       document.getElementById("callsRemaining").textContent = s.callsRemaining ?? 0;
@@ -212,37 +231,38 @@ function setSheetsUI(connected){
       document.getElementById("autoTopupEnabled").checked = !!s.autoTopupEnabled;
       document.getElementById("topupOptions").style.display = s.autoTopupEnabled ? "block" : "none";
 
+      // Mejor copy (menos confuso)
       const usageHint = document.getElementById("usageHint");
       if (s.spentEurThisCycle != null) {
-        usageHint.textContent = `Consumo estimado este ciclo: €${Number(s.spentEurThisCycle).toFixed(2)}.`;
+        usageHint.textContent = `Consumo aproximado del asistente este mes: €${Number(s.spentEurThisCycle).toFixed(2)}.`;
       } else {
         usageHint.textContent = "";
       }
 
-      // Calendar status (works for paid too)
       setCalendarUI(!!s.googleCalendarConnected);
       setSheetsUI(!!s.googleSheetsConnected);
       return s;
     }
 
-    // Wire UI actions (paid-only controls; won't be visible for free anyway)
-    document.getElementById("autoTopupEnabled").addEventListener("change", async (e)=>{
-      try{
-        const enabled = e.target.checked;
-        document.getElementById("topupOptions").style.display = enabled ? "block" : "none";
-        await postJSON("/api/dashboard/settings", { autoTopupEnabled: enabled });
-        showToast("Guardado");
-      }catch(err){
-        showToast(err?.message || "Error");
-      }
-    });
-
+    // Recordatorios
     document.getElementById("saveNotifBtn").addEventListener("click", async ()=>{
       try{
         await postJSON("/api/dashboard/settings", {
           notify50: document.getElementById("notify50").checked,
           notify80: document.getElementById("notify80").checked,
         });
+        showToast("Guardado");
+      }catch(err){
+        showToast(err?.message || "Error");
+      }
+    });
+
+    // Auto topup (solo settings, luego lo automatizas)
+    document.getElementById("autoTopupEnabled").addEventListener("change", async (e)=>{
+      try{
+        const enabled = e.target.checked;
+        document.getElementById("topupOptions").style.display = enabled ? "block" : "none";
+        await postJSON("/api/dashboard/settings", { autoTopupEnabled: enabled });
         showToast("Guardado");
       }catch(err){
         showToast(err?.message || "Error");
@@ -275,10 +295,22 @@ function setSheetsUI(connected){
       }
     });
 
+    // Manual topup UI
     document.getElementById("manualTopupBtn").addEventListener("click", ()=>{
-      window.location.href = "/asistente-telefonico/#precios";
+      const box = document.getElementById("manualTopupBox");
+      box.style.display = (box.style.display === "none" || !box.style.display) ? "block" : "none";
     });
 
+    // Manual topup -> redirect to backend endpoint that creates Stripe Checkout Session
+    document.querySelectorAll("[data-manual-topup]").forEach(btn=>{
+      btn.addEventListener("click", ()=>{
+        const amount = parseInt(btn.getAttribute("data-manual-topup"), 10);
+        if(!Number.isFinite(amount)) return;
+        window.location.href = `/api/stripe/topup/start?amount=${encodeURIComponent(amount)}`;
+      });
+    });
+
+    // Logout
     document.getElementById("logoutBtn").addEventListener("click", async ()=>{
       try{
         await postJSON("/api/auth/logout");
@@ -290,27 +322,18 @@ function setSheetsUI(connected){
     (async ()=>{
       try{
         const me = await getJSON("/api/auth/me");
+        window.__ME = me;
+
         document.getElementById("userLine").textContent =
           `Sesión: ${me.user.email} • proveedor: ${me.user.auth_provider}`;
 
-        // show integrations for anyone logged in
         document.getElementById("integrationsBox").style.display = "block";
 
         if(me.user.paid_status === "active"){
           document.getElementById("paidBox").style.display = "block";
-          try{
-            await loadDashboard();
-          }catch(e){
-            showToast("No se pudo cargar el panel (falta /api/dashboard/summary).");
-            // still keep integration box visible
-            setCalendarUI(false);
-          }
+          await loadDashboard();
         } else {
           document.getElementById("freeBox").style.display = "block";
-
-          // For free users, we still want calendar status if possible.
-          // If your /api/dashboard/summary returns googleCalendarConnected even for free,
-          // this will show correct status. Otherwise it will just say "No conectado".
           try{
             const s = await getJSON("/api/dashboard/summary");
             setCalendarUI(!!s.googleCalendarConnected);
