@@ -62,7 +62,9 @@ export async function onRequestPost({ request, env }) {
   if (!env.DB) return json({ error: "DB binding missing" }, 500);
   if (!env.JWT_SECRET) return json({ error: "JWT_SECRET missing" }, 500);
 
-  const token = getCookie(request, "session");
+  const auth = request.headers.get("Authorization") || "";
+const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+const token = bearer || getCookie(request, "session");
   if (!token) return json({ error: "No autorizado" }, 401);
 
   const payload = await verifyHS256JWT(token, env.JWT_SECRET);

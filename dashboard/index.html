@@ -52,6 +52,17 @@
           <p class="muted" style="margin-top:10px; font-size:12px" id="usageHint"></p>
         </div>
 
+        <!-- Integraciones -->
+        <div class="card p24" style="margin-top:14px">
+          <div class="h3">Integraciones</div>
+          <div class="muted" id="gcalStatus" style="margin-top:8px">Cargando…</div>
+          <div style="margin-top:12px; display:flex; gap:10px; flex-wrap:wrap">
+            <a class="btn small" id="gcalConnectBtn" href="/api/integrations/google/start?next=/dashboard/">
+              Conectar Google Calendar
+            </a>
+          </div>
+        </div>
+
         <div class="card p24" style="margin-top:14px">
           <div class="h3">Recordatorios</div>
 
@@ -177,6 +188,17 @@
       } else {
         usageHint.textContent = "";
       }
+
+      // ✅ Google Calendar status
+      const el = document.getElementById("gcalStatus");
+      const btn = document.getElementById("gcalConnectBtn");
+      if (s.googleCalendarConnected) {
+        el.textContent = "✅ Google Calendar conectado";
+        btn.textContent = "Reconectar";
+      } else {
+        el.textContent = "⚠️ Google Calendar no conectado";
+        btn.textContent = "Conectar Google Calendar";
+      }
     }
 
     // Wire UI actions
@@ -230,7 +252,6 @@
     });
 
     document.getElementById("manualTopupBtn").addEventListener("click", ()=>{
-      // For now, send them to pricing / checkout flow
       window.location.href = "/asistente-telefonico/#precios";
     });
 
