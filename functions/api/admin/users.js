@@ -1,5 +1,5 @@
 // functions/api/admin/users.js
-import { verifyJWT } from "../auth/_lib/jwt.js"; // adjust path if needed
+import { verifyJWT } from "../_lib/jwt.js"; // adjust path if needed
 
 function json(data, status=200){
   return new Response(JSON.stringify(data), { status, headers: { "Content-Type":"application/json" }});

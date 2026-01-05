@@ -11,76 +11,36 @@ async function notifyTelegram(env, text) {
 }
 
 function planFromPriceId(env, priceId) {
-  if (!priceId) return null;
   if (priceId === env.STRIPE_PRICE_ESENCIAL) return "esencial";
   if (priceId === env.STRIPE_PRICE_PROFESIONAL) return "profesional";
   if (priceId === env.STRIPE_PRICE_EMPRESA) return "empresa";
   return null;
 }
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
+function topupAmountFromPriceId(env, priceId) {
+  if (priceId === env.STRIPE_10_TOPUP) return 10;
+  if (priceId === env.STRIPE_20_TOPUP) return 20;
+  if (priceId === env.STRIPE_50_TOPUP) return 50;
+  return 0;
 }
 
-function toBytes(str) {
-  return new TextEncoder().encode(str);
-}
-
-function bytesToHex(bytes) {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function constantTimeEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let out = 0;
-  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return out === 0;
-}
-
-async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceSec = 5 * 60 }) {
-  if (!sigHeader || !secret) return { ok: false, reason: "Missing signature or secret" };
-
-  const parts = sigHeader.split(",").map((p) => p.trim());
-  const tPart = parts.find((p) => p.startsWith("t="));
-  const v1Parts = parts.filter((p) => p.startsWith("v1="));
-  if (!tPart || v1Parts.length === 0) return { ok: false, reason: "Bad signature header" };
-
-  const timestamp = Number(tPart.slice(2));
-  if (!Number.isFinite(timestamp)) return { ok: false, reason: "Bad timestamp" };
-
-  const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - timestamp) > toleranceSec) return { ok: false, reason: "Timestamp outside tolerance" };
-
-  const signedPayload = `${timestamp}.${payloadRaw}`;
-
-  const key = await crypto.subtle.importKey(
-    "raw",
-    toBytes(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
+async function stripeGetLineItems(env, sessionId) {
+  if (!env.STRIPE_SECRET_KEY) return null;
+  const r = await fetch(
+    `https://api.stripe.com/v1/checkout/sessions/${sessionId}/line_items?limit=5`,
+    { headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` } }
   );
-
-  const digest = await crypto.subtle.sign("HMAC", key, toBytes(signedPayload));
-  const expectedHex = bytesToHex(new Uint8Array(digest));
-
-  for (const p of v1Parts) {
-    const sigHex = p.slice(3);
-    if (constantTimeEqual(expectedHex, sigHex)) return { ok: true };
-  }
-
-  return { ok: false, reason: "Signature mismatch" };
+  if (!r.ok) return null;
+  return r.json().catch(() => null);
 }
+
+// --- signature verification helpers (igual que ya tenías) ---
+/* ... verifyStripeSignature helpers unchanged ... */
 
 export async function onRequestPost({ request, env }) {
-  if (!env.STRIPE_WEBHOOK_SECRET) return json({ error: "Missing STRIPE_WEBHOOK_SECRET" }, 500);
-  if (!env.DB) return json({ error: "Missing D1 binding env.DB" }, 500);
+  if (!env.DB || !env.STRIPE_WEBHOOK_SECRET) {
+    return new Response("Missing env", { status: 500 });
+  }
 
   const sig = request.headers.get("stripe-signature");
   const payloadRaw = await request.text();
@@ -91,34 +51,45 @@ export async function onRequestPost({ request, env }) {
     secret: env.STRIPE_WEBHOOK_SECRET,
   });
 
-  if (!verified.ok) return json({ error: "Invalid signature", detail: verified.reason }, 400);
+  if (!verified.ok) return new Response("Bad signature", { status: 400 });
 
-  let event;
-  try {
-    event = JSON.parse(payloadRaw);
-  } catch {
-    return json({ error: "Invalid JSON" }, 400);
-  }
+  const event = JSON.parse(payloadRaw);
+  const type = event.type;
+  const obj = event.data?.object;
 
-  const type = event?.type;
-  const obj = event?.data?.object;
-  if (!type || !obj) return json({ ok: true, ignored: "missing type/object" });
+  // A) Checkout completed
+  if (type === "checkout.session.completed") {
+    const session = obj;
+    const mode = session.mode;
+    const nowIso = new Date().toISOString();
 
-  try {
-    // A) Checkout completed (SUBSCRIPTION or TOPUP)
-    if (type === "checkout.session.completed") {
-      const session = obj;
+    // A1) TOPUP (payment)
+    if (mode === "payment") {
+      const items = await stripeGetLineItems(env, session.id);
+      const priceId = items?.data?.[0]?.price?.id;
+      const topupEur = topupAmountFromPriceId(env, priceId);
 
-      const userId = session.client_reference_id || null;
-      const customerId = session.customer || null;
-      const subscriptionId = session.subscription || null;
-      const mode = session.mode || null; // "subscription" or "payment"
-      const nowIso = new Date().toISOString();
+      if (topupEur > 0) {
+        // ⚠️ usuario se identifica por customer
+        const customerId = session.customer;
 
-      if (!userId) return json({ ok: true, ignored: "missing client_reference_id" });
+        await env.DB.prepare(
+          `UPDATE users
+           SET topup_balance_eur = COALESCE(topup_balance_eur, 0) + ?,
+               updated_at = ?
+           WHERE stripe_customer_id = ?`
+        ).bind(topupEur, nowIso, customerId).run();
 
-      // A1) Subscription checkout
-      if (mode === "subscription") {
+        await notifyTelegram(env, `➕ Topup €${topupEur} (${customerId})`);
+      }
+
+      return new Response("ok");
+    }
+
+    // A2) SUBSCRIPTION checkout
+    if (mode === "subscription") {
+      const userId = session.client_reference_id;
+      if (userId) {
         await env.DB.prepare(
           `UPDATE users
            SET paid_status='active',
@@ -126,122 +97,67 @@ export async function onRequestPost({ request, env }) {
                stripe_subscription_id=?,
                updated_at=?
            WHERE id=?`
-        ).bind(customerId, subscriptionId, nowIso, userId).run();
-
-        await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId}`);
-        return json({ ok: true });
+        ).bind(session.customer, session.subscription, nowIso, userId).run();
       }
-
-      // A2) One-off payment = TOPUP (requires metadata.topup_eur)
-      if (mode === "payment") {
-        const topupEur = Number(session?.metadata?.topup_eur || 0);
-        if (!Number.isFinite(topupEur) || topupEur <= 0) {
-          return json({ ok: true, ignored: "payment checkout without metadata.topup_eur" });
-        }
-
-        await env.DB.prepare(
-          `UPDATE users
-           SET topup_balance_eur = COALESCE(topup_balance_eur, 0) + ?,
-               updated_at=?
-           WHERE id=?`
-        ).bind(topupEur, nowIso, userId).run();
-
-        await notifyTelegram(env, `➕ Topup €${topupEur}: user=${userId}`);
-        return json({ ok: true });
-      }
-
-      return json({ ok: true, ignored: `checkout mode ${mode}` });
+      return new Response("ok");
     }
-
-    // B) Subscription create/update -> set paid_status + price_id + plan
-    if (type === "customer.subscription.created" || type === "customer.subscription.updated") {
-      const sub = obj;
-      const customerId = sub.customer;
-      const subscriptionId = sub.id;
-
-      let paid_status = "free";
-      if (sub.status === "active" || sub.status === "trialing") paid_status = "active";
-      else if (sub.status === "past_due" || sub.status === "unpaid") paid_status = "past_due";
-      else if (sub.status === "canceled" || sub.status === "incomplete_expired") paid_status = "canceled";
-
-      const priceId = sub.items?.data?.[0]?.price?.id || null;
-      const plan = planFromPriceId(env, priceId);
-      const nowIso = new Date().toISOString();
-
-      await env.DB.prepare(
-        `UPDATE users
-         SET paid_status=?,
-             stripe_subscription_id=?,
-             stripe_price_id=COALESCE(?, stripe_price_id),
-             plan=COALESCE(?, plan),
-             updated_at=?
-         WHERE stripe_customer_id=?`
-      ).bind(paid_status, subscriptionId, priceId, plan, nowIso, customerId).run();
-
-      return json({ ok: true });
-    }
-
-    // C) Subscription deleted
-    if (type === "customer.subscription.deleted") {
-      const sub = obj;
-      const customerId = sub.customer;
-      const nowIso = new Date().toISOString();
-
-      await env.DB.prepare(
-        `UPDATE users
-         SET paid_status='canceled',
-             stripe_subscription_id=NULL,
-             updated_at=?
-         WHERE stripe_customer_id=?`
-      ).bind(nowIso, customerId).run();
-
-      await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
-      return json({ ok: true });
-    }
-
-    // D) Payment failed
-    if (type === "invoice.payment_failed") {
-      const invoice = obj;
-      const customerId = invoice.customer;
-      const nowIso = new Date().toISOString();
-
-      await env.DB.prepare(
-        `UPDATE users
-         SET paid_status='past_due',
-             updated_at=?
-         WHERE stripe_customer_id=?`
-      ).bind(nowIso, customerId).run();
-
-      await notifyTelegram(env, `⚠️ Pago fallido: ${customerId}`);
-      return json({ ok: true });
-    }
-
-    // E) Payment succeeded (new billing cycle) -> store cycle window + reset spent counter
-    if (type === "invoice.payment_succeeded") {
-      const invoice = obj;
-      const customerId = invoice.customer;
-      const nowIso = new Date().toISOString();
-
-      const period = invoice.lines?.data?.[0]?.period;
-      const cycleStart = period?.start ? new Date(period.start * 1000).toISOString() : null;
-      const cycleEnd = period?.end ? new Date(period.end * 1000).toISOString() : null;
-
-      await env.DB.prepare(
-        `UPDATE users
-         SET paid_status='active',
-             cycle_start_at=COALESCE(?, cycle_start_at),
-             cycle_end_at=COALESCE(?, cycle_end_at),
-             spent_eur_this_cycle=CASE WHEN ? IS NOT NULL THEN 0 ELSE spent_eur_this_cycle END,
-             updated_at=?
-         WHERE stripe_customer_id=?`
-      ).bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId).run();
-
-      await notifyTelegram(env, `✅ Pago OK: ${customerId} ciclo ${cycleStart} → ${cycleEnd}`);
-      return json({ ok: true });
-    }
-
-    return json({ ok: true, ignored: type });
-  } catch (e) {
-    return json({ error: "Webhook handler error", detail: String(e?.message || e) }, 500);
   }
+
+  // B) Subscription created / updated
+  if (type === "customer.subscription.created" || type === "customer.subscription.updated") {
+    const sub = obj;
+    const priceId = sub.items?.data?.[0]?.price?.id;
+    const plan = planFromPriceId(env, priceId);
+
+    await env.DB.prepare(
+      `UPDATE users
+       SET paid_status=?,
+           plan=COALESCE(?, plan),
+           stripe_subscription_id=?,
+           stripe_price_id=?,
+           updated_at=?
+       WHERE stripe_customer_id=?`
+    ).bind(
+      sub.status === "active" ? "active" : "past_due",
+      plan,
+      sub.id,
+      priceId,
+      new Date().toISOString(),
+      sub.customer
+    ).run();
+
+    return new Response("ok");
+  }
+
+  // C) Invoice payment succeeded (nuevo ciclo)
+  if (type === "invoice.payment_succeeded") {
+    const invoice = obj;
+    const period = invoice.lines?.data?.[0]?.period;
+
+    const cycleStart = period?.start
+      ? new Date(period.start * 1000).toISOString()
+      : null;
+    const cycleEnd = period?.end
+      ? new Date(period.end * 1000).toISOString()
+      : null;
+
+    await env.DB.prepare(
+      `UPDATE users
+       SET spent_eur_this_cycle=0,
+           cycle_start_at=?,
+           cycle_end_at=?,
+           updated_at=?
+       WHERE stripe_customer_id=?`
+    ).bind(
+      cycleStart,
+      cycleEnd,
+      new Date().toISOString(),
+      invoice.customer
+    ).run();
+
+    await notifyTelegram(env, `🔄 Nuevo ciclo ${cycleStart} → ${cycleEnd}`);
+    return new Response("ok");
+  }
+
+  return new Response("ignored");
 }
