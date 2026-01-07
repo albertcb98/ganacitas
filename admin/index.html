@@ -18,13 +18,13 @@
       <p class="muted" id="status">Cargando…</p>
 
       <div style="overflow:auto; margin-top:12px">
-        <table class="table" id="t" style="min-width:900px">
+        <table class="table" id="t" style="min-width:1000px">
           <thead>
             <tr>
               <th>Email</th>
               <th>Plan</th>
               <th>Estado</th>
- <th>Gracia</th>
+              <th>Gracia</th>
               <th>Agente</th>
               <th>Gastado €</th>
               <th>Sync</th>
@@ -39,9 +39,56 @@
     </div>
   </div>
 
+  <!-- Modal -->
+  <div id="userModal" class="modal-backdrop" style="display:none" role="dialog" aria-modal="true" aria-labelledby="umTitle">
+    <div class="modal">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="umTitle">Usuario</div>
+          <div class="muted" id="umSub" style="margin-top:6px"></div>
+        </div>
+        <button class="btn small" type="button" id="closeModalBtn">Cerrar</button>
+      </div>
+
+      <div class="modal-body">
+        <div class="pill">ID: <span class="code" id="umId">—</span></div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px">
+          <div class="pill">Plan: <span class="code" id="umPlan">—</span></div>
+          <div class="pill">paid_status: <span class="code" id="umPaid">—</span></div>
+          <div class="pill">Agente: <span class="code" id="umAgent">—</span></div>
+          <div class="pill">Gracia hasta: <span class="code" id="umGrace">—</span></div>
+        </div>
+
+        <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px">
+          <button class="btn small" type="button" id="btnGrace5">+5 días gracia</button>
+          <button class="btn small" type="button" id="btnGraceRemove">Quitar gracia</button>
+          <button class="btn small" type="button" id="btnPauseAgent">Pausar agente</button>
+        </div>
+
+        <div class="muted" style="margin-top:10px; font-size:12px">
+          Nota: “Pausar agente” aquí pone <span class="code">agent_status=pausado</span>.
+          Si quieres también “cortar llamadas” en Vapi, hay que añadir <span class="code">vapi_phone_number_id</span> (te lo explico abajo).
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
 async function getJSON(url){
   const r = await fetch(url, { credentials:"include" });
+  const data = await r.json().catch(()=> ({}));
+  if(!r.ok) throw new Error(data?.error || "Error");
+  return data;
+}
+
+async function postJSON(url, payload){
+  const r = await fetch(url, {
+    method:"POST",
+    credentials:"include",
+    headers: { "Content-Type":"application/json" },
+    body: JSON.stringify(payload || {})
+  });
   const data = await r.json().catch(()=> ({}));
   if(!r.ok) throw new Error(data?.error || "Error");
   return data;
@@ -53,28 +100,97 @@ function td(s){
   return el;
 }
 
+function graceLabel(iso){
+  if(!iso) return "—";
+  const ms = new Date(iso).getTime() - Date.now();
+  const days = Math.ceil(ms / (24*60*60*1000));
+  if (!Number.isFinite(days)) return iso;
+  if (days <= 0) return "EXPIRADA";
+  return `${days} día(s)`;
+}
+
+let USERS = [];
+let SELECTED = null;
+
+function openModal(u){
+  SELECTED = u;
+
+  document.getElementById("umTitle").textContent = u.email || "Usuario";
+  document.getElementById("umSub").textContent =
+    `Plan=${u.plan || "free"} • paid_status=${u.paid_status || "—"} • agent_status=${u.agent_status || "—"}`;
+
+  document.getElementById("umId").textContent = u.id || "—";
+  document.getElementById("umPlan").textContent = u.plan || "free";
+  document.getElementById("umPaid").textContent = u.paid_status || "—";
+  document.getElementById("umAgent").textContent = u.agent_status || "—";
+  document.getElementById("umGrace").textContent = u.grace_until_at || "—";
+
+  document.getElementById("userModal").style.display = "block";
+}
+
+function closeModal(){
+  document.getElementById("userModal").style.display = "none";
+}
+
+document.getElementById("closeModalBtn").addEventListener("click", closeModal);
+document.getElementById("userModal").addEventListener("click", (e)=>{
+  if (e.target.id === "userModal") closeModal();
+});
+
+async function refreshTable(){
+  const res = await getJSON("/api/admin/users");
+  USERS = res.users || [];
+
+  document.getElementById("status").textContent = `Usuarios: ${USERS.length}`;
+
+  const tbody = document.querySelector("#t tbody");
+  tbody.innerHTML = "";
+
+  for(const u of USERS){
+    const tr = document.createElement("tr");
+
+    // ✅ Row highlighting (put it HERE)
+    if (u.paid_status === "canceled") {
+      tr.style.background = "rgba(255,0,0,.06)";
+    } else if (u.paid_status && u.paid_status !== "active") {
+      tr.style.background = "rgba(255,165,0,.08)";
+    }
+
+    tr.style.cursor = "pointer";
+    tr.addEventListener("click", ()=> openModal(u));
+
+    tr.appendChild(td(u.email));
+    tr.appendChild(td(u.plan || "free"));
+    tr.appendChild(td(u.paid_status || "—"));
+    tr.appendChild(td(graceLabel(u.grace_until_at)));
+    tr.appendChild(td(u.agent_status || "—"));
+    tr.appendChild(td(u.spent_eur_this_cycle ?? 0));
+    tr.appendChild(td(u.last_usage_sync_at || ""));
+    tr.appendChild(td((u.cycle_start_at||"") + " → " + (u.cycle_end_at||"")));
+    tr.appendChild(td(u.vapi_assistant_id ? "✅" : "—"));
+    tr.appendChild(td(u.mcp_url ? "✅" : "—"));
+
+    tbody.appendChild(tr);
+  }
+}
+
+async function runAction(action){
+  if(!SELECTED?.id) return;
+  await postJSON("/api/admin/user/update", { userId: SELECTED.id, action });
+  await refreshTable();
+
+  // refresh modal values too
+  const u = USERS.find(x => x.id === SELECTED.id);
+  if (u) openModal(u);
+}
+
+document.getElementById("btnGrace5").addEventListener("click", ()=> runAction("grace_plus_5"));
+document.getElementById("btnGraceRemove").addEventListener("click", ()=> runAction("grace_remove"));
+document.getElementById("btnPauseAgent").addEventListener("click", ()=> runAction("pause_agent"));
+
 (async ()=>{
   try{
-    const { users } = await getJSON("/api/admin/users");
-    document.getElementById("status").textContent = `Usuarios: ${users.length}`;
-
-    const tbody = document.querySelector("#t tbody");
-    tbody.innerHTML = "";
-
-    for(const u of users){
-      const tr = document.createElement("tr");
-      tr.appendChild(td(u.email));
-      tr.appendChild(td(u.plan || "free"));
-      tr.appendChild(td(u.paid_status));
-tr.appendChild(td(u.grace_until_at || "—")); // NEW
-      tr.appendChild(td(u.agent_status));
-      tr.appendChild(td(u.spent_eur_this_cycle ?? 0));
-      tr.appendChild(td(u.last_usage_sync_at || ""));
-      tr.appendChild(td((u.cycle_start_at||"") + " → " + (u.cycle_end_at||"")));
-      tr.appendChild(td(u.vapi_assistant_id ? "✅" : "—"));
-      tr.appendChild(td(u.mcp_url ? "✅" : "—"));
-      tbody.appendChild(tr);
-    }
+    await refreshTable();
   }catch(e){
     document.getElementById("status").textContent = "No autorizado (solo admin).";
   }
