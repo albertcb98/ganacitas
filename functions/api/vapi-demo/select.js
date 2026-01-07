@@ -1,6 +1,5 @@
  
-console.log("[select] NOTION_API_KEY present?", !!env.NOTION_API_KEY, "len:", (env.NOTION_API_KEY || "").length);
-console.log("[select] NOTION_DATABASE_ID present?", !!env.NOTION_DATABASE_ID);
+
 export async function onRequestGet({ env }) {
   try {
     const NOTION_API_KEY = env.NOTION_API_KEY;
