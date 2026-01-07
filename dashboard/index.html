@@ -16,7 +16,10 @@
     <div class="card p24">
       <h1 class="h2">Tu panel</h1>
       <p class="muted" id="userLine">Cargando…</p>
-
+<div id="billingBanner" class="card p24" style="display:none; margin-top:14px; border:1px solid rgba(255,165,0,.35)">
+  <div class="h3">⚠️ Aviso de pago</div>
+  <p class="muted" id="billingBannerText" style="margin-top:8px"></p>
+</div>
       <!-- Integraciones (visible para free y paid) -->
       <div id="integrationsBox" class="card p24" style="margin-top:14px; display:none">
         <div class="h3">Integraciones</div>
@@ -215,10 +218,21 @@
       if (!txt) return;
       txt.textContent = connected ? "Conectado ✅" : "No conectado ⚠️";
     }
+function setBillingBanner(text){
+  const box = document.getElementById("billingBanner");
+  const t = document.getElementById("billingBannerText");
+  if (!box || !t) return;
 
+  if (text) {
+    t.textContent = text;
+    box.style.display = "block";
+  } else {
+    box.style.display = "none";
+  }
+}
     async function loadDashboard(){
       const s = await getJSON("/api/dashboard/summary");
-
+setBillingBanner(s.billingWarningText || null);
       document.getElementById("planName").textContent = s.planLabel ?? "—";
       document.getElementById("callsIncluded").textContent = s.callsIncluded ?? 0;
       document.getElementById("callsRemaining").textContent = s.callsRemaining ?? 0;
@@ -336,6 +350,7 @@
           document.getElementById("freeBox").style.display = "block";
           try{
             const s = await getJSON("/api/dashboard/summary");
+setBillingBanner(s.billingWarningText || null);
             setCalendarUI(!!s.googleCalendarConnected);
             setSheetsUI(!!s.googleSheetsConnected);
           }catch{

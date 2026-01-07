@@ -70,12 +70,40 @@ async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceS
   return { ok: false, reason: "Signature mismatch" };
 }
 
+function addDaysISO(isoOrNow, days) {
+  const d = isoOrNow ? new Date(isoOrNow) : new Date();
+  d.setDate(d.getDate() + days);
+  return d.toISOString();
+}
+
 function planFromPriceId(env, priceId) {
   if (!priceId) return null;
   if (priceId === env.STRIPE_PRICE_ESENCIAL) return "esencial";
   if (priceId === env.STRIPE_PRICE_PROFESIONAL) return "profesional";
   if (priceId === env.STRIPE_PRICE_EMPRESA) return "empresa";
   return null;
+}
+
+function topupAmountFromPriceId(env, priceId) {
+  if (!priceId) return 0;
+  if (priceId === env.STRIPE_TOPUP_10_PRICE_ID) return 10;
+  if (priceId === env.STRIPE_TOPUP_20_PRICE_ID) return 20;
+  if (priceId === env.STRIPE_TOPUP_50_PRICE_ID) return 50;
+  return 0;
+}
+
+async function stripeGetLineItems(env, sessionId) {
+  if (!env.STRIPE_SECRET_KEY) return null;
+  const url = `https://api.stripe.com/v1/checkout/sessions/${sessionId}/line_items?limit=10`;
+  const r = await fetch(url, {
+    headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
+  });
+  if (!r.ok) {
+    const t = await r.text().catch(() => "");
+    console.log("[stripe] line_items failed", r.status, t);
+    return null;
+  }
+  return r.json().catch(() => null);
 }
 
 export async function onRequestPost({ request, env }) {
@@ -105,7 +133,7 @@ export async function onRequestPost({ request, env }) {
   if (!type || !obj) return json({ ok: true, ignored: "missing type/object" });
 
   try {
-    // 1) Checkout completed (subscription OR payment)
+    // A) checkout.session.completed (subscription OR topup payment)
     if (type === "checkout.session.completed") {
       const session = obj;
 
@@ -117,13 +145,14 @@ export async function onRequestPost({ request, env }) {
 
       if (!userId) return json({ ok: true, ignored: "missing client_reference_id" });
 
-      // 1A) Subscription checkout
+      // A1) subscription checkout
       if (mode === "subscription") {
         await env.DB.prepare(
           `UPDATE users
            SET paid_status='active',
                stripe_customer_id=?,
                stripe_subscription_id=?,
+               grace_until_at=NULL,
                updated_at=?
            WHERE id=?`
         ).bind(customerId, subscriptionId, nowIso, userId).run();
@@ -132,14 +161,24 @@ export async function onRequestPost({ request, env }) {
         return json({ ok: true });
       }
 
-      // 1B) One-off payment = TOPUP (we set metadata.topup_eur in /api/stripe/topup/start)
+      // A2) topup payment checkout -> compute amount from line_items priceId(s)
       if (mode === "payment") {
-        const topupEur = Number(session?.metadata?.topup_eur || 0);
-        if (!Number.isFinite(topupEur) || topupEur <= 0) {
-          return json({ ok: true, ignored: "payment checkout without metadata.topup_eur" });
+        const li = await stripeGetLineItems(env, session.id);
+        const items = li?.data || [];
+        let topupEur = 0;
+
+        for (const it of items) {
+          const priceId = it?.price?.id || null;
+          const qty = Number(it?.quantity || 1);
+          const each = topupAmountFromPriceId(env, priceId);
+          if (each > 0 && Number.isFinite(qty) && qty > 0) topupEur += each * qty;
         }
 
-        // Requires column topup_balance_eur in users table (REAL default 0)
+        if (!topupEur || topupEur <= 0) {
+          await notifyTelegram(env, `⚠️ Topup: no se pudo calcular el importe (session=${session.id})`);
+          return json({ ok: true, ignored: "topup amount not detected" });
+        }
+
         await env.DB.prepare(
           `UPDATE users
            SET topup_balance_eur = COALESCE(topup_balance_eur, 0) + ?,
@@ -154,20 +193,35 @@ export async function onRequestPost({ request, env }) {
       return json({ ok: true, ignored: `checkout mode ${mode}` });
     }
 
-    // 2) Subscription create/update -> set paid_status + price_id + plan
+    // B) subscription created/updated -> set status + plan + grace rules
     if (type === "customer.subscription.created" || type === "customer.subscription.updated") {
       const sub = obj;
       const customerId = sub.customer;
       const subscriptionId = sub.id;
 
-      let paid_status = "free";
-      if (sub.status === "active" || sub.status === "trialing") paid_status = "active";
-      else if (sub.status === "past_due" || sub.status === "unpaid") paid_status = "past_due";
-      else if (sub.status === "canceled" || sub.status === "incomplete_expired") paid_status = "canceled";
+      const stripeStatus = sub.status; // active, trialing, past_due, unpaid, canceled...
+      const nowIso = new Date().toISOString();
 
       const priceId = sub.items?.data?.[0]?.price?.id || null;
       const plan = planFromPriceId(env, priceId);
-      const nowIso = new Date().toISOString();
+
+      // Map to your paid_status
+      let paid_status = "free";
+      if (stripeStatus === "active" || stripeStatus === "trialing") paid_status = "active";
+      else if (stripeStatus === "past_due" || stripeStatus === "unpaid") paid_status = "past_due";
+      else if (stripeStatus === "canceled") paid_status = "canceled";
+      else paid_status = "past_due"; // safe default
+
+      // Grace rules:
+      // - canceled: immediate cancel (no grace)
+      // - past_due/unpaid: grace 5 days
+      // - active/trialing: clear grace
+      const GRACE_DAYS = 5;
+      let graceUntil = null;
+
+      if (paid_status === "past_due") graceUntil = addDaysISO(nowIso, GRACE_DAYS);
+      if (paid_status === "canceled") graceUntil = null;
+      if (paid_status === "active") graceUntil = null;
 
       await env.DB.prepare(
         `UPDATE users
@@ -175,14 +229,20 @@ export async function onRequestPost({ request, env }) {
              stripe_subscription_id=?,
              stripe_price_id=COALESCE(?, stripe_price_id),
              plan=COALESCE(?, plan),
+             grace_until_at=?,
              updated_at=?
          WHERE stripe_customer_id=?`
-      ).bind(paid_status, subscriptionId, priceId, plan, nowIso, customerId).run();
+      )
+        .bind(paid_status, subscriptionId, priceId, plan, graceUntil, nowIso, customerId)
+        .run();
 
+      if (paid_status === "canceled") {
+        await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
+      }
       return json({ ok: true });
     }
 
-    // 3) Subscription deleted
+    // C) subscription deleted -> canceled immediately
     if (type === "customer.subscription.deleted") {
       const sub = obj;
       const customerId = sub.customer;
@@ -192,32 +252,37 @@ export async function onRequestPost({ request, env }) {
         `UPDATE users
          SET paid_status='canceled',
              stripe_subscription_id=NULL,
+             grace_until_at=NULL,
              updated_at=?
          WHERE stripe_customer_id=?`
       ).bind(nowIso, customerId).run();
 
-      await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
+      await notifyTelegram(env, `🛑 Suscripción eliminada/cancelada: ${customerId}`);
       return json({ ok: true });
     }
 
-    // 4) Payment failed
+    // D) invoice.payment_failed -> start grace countdown
     if (type === "invoice.payment_failed") {
       const invoice = obj;
       const customerId = invoice.customer;
       const nowIso = new Date().toISOString();
 
+      const GRACE_DAYS = 5;
+      const graceUntil = addDaysISO(nowIso, GRACE_DAYS);
+
       await env.DB.prepare(
         `UPDATE users
          SET paid_status='past_due',
+             grace_until_at=?,
              updated_at=?
          WHERE stripe_customer_id=?`
-      ).bind(nowIso, customerId).run();
+      ).bind(graceUntil, nowIso, customerId).run();
 
-      await notifyTelegram(env, `⚠️ Pago fallido: ${customerId}`);
+      await notifyTelegram(env, `⚠️ Pago fallido: ${customerId} (gracia hasta ${graceUntil})`);
       return json({ ok: true });
     }
 
-    // 5) Payment succeeded (new billing cycle) -> store cycle window + reset spent counter
+    // E) invoice.payment_succeeded -> new billing cycle OK (clear grace + reset)
     if (type === "invoice.payment_succeeded") {
       const invoice = obj;
       const customerId = invoice.customer;
@@ -230,6 +295,7 @@ export async function onRequestPost({ request, env }) {
       await env.DB.prepare(
         `UPDATE users
          SET paid_status='active',
+             grace_until_at=NULL,
              cycle_start_at=COALESCE(?, cycle_start_at),
              cycle_end_at=COALESCE(?, cycle_end_at),
              spent_eur_this_cycle=CASE WHEN ? IS NOT NULL THEN 0 ELSE spent_eur_this_cycle END,

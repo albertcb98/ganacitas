@@ -84,8 +84,8 @@ export async function onRequestGet({ request, env }) {
   if (!userId) return new Response("Unauthorized", { status: 401 });
 
   // Create Checkout Session
-  const successUrl = `${env.SITE_URL}/dashboard/?topup=success`;
-  const cancelUrl = `${env.SITE_URL}/dashboard/?topup=cancel`;
+  const successUrl = `${env.SITE_URL}/thank-you/?t=topup&a=${amount}`;
+  const cancelUrl = `${env.SITE_URL}/dashboard/?sub=cancel
 
   const body = new URLSearchParams();
   body.set("mode", "payment");

@@ -14,7 +14,7 @@ function nowISO() {
 
 function getCookie(req, name) {
   const h = req.headers.get("Cookie") || "";
-  const parts = h.split(";").map(s => s.trim());
+  const parts = h.split(";").map((s) => s.trim());
   for (const p of parts) {
     if (p.startsWith(name + "=")) return decodeURIComponent(p.slice(name.length + 1));
   }
@@ -76,10 +76,18 @@ function monthCycleRangeISO() {
   return { startISO: start.toISOString(), endISO: end.toISOString() };
 }
 
+function daysLeft(iso) {
+  if (!iso) return null;
+  const ms = new Date(iso).getTime() - Date.now();
+  return Math.ceil(ms / (24 * 60 * 60 * 1000));
+}
+
 async function getGoogleIntegration(env, userId) {
   return await env.DB.prepare(
     "SELECT refresh_token, scope FROM user_integrations WHERE user_id=? AND provider='google_calendar' LIMIT 1"
-  ).bind(userId).first();
+  )
+    .bind(userId)
+    .first();
 }
 
 async function refreshSpentFromVapi({ env, user }) {
@@ -106,7 +114,7 @@ async function refreshSpentFromVapi({ env, user }) {
   }
 
   const data = await r.json().catch(() => ({}));
-  const items = Array.isArray(data) ? data : (data.items || data.calls || []);
+  const items = Array.isArray(data) ? data : data.items || data.calls || [];
 
   let spent = 0;
   for (const c of items) {
@@ -117,7 +125,9 @@ async function refreshSpentFromVapi({ env, user }) {
 
   await env.DB.prepare(
     "UPDATE users SET spent_eur_this_cycle=?, last_usage_sync_at=?, updated_at=? WHERE id=?"
-  ).bind(spent, nowISO(), nowISO(), user.id).run();
+  )
+    .bind(spent, nowISO(), nowISO(), user.id)
+    .run();
 
   return { spentEur: spent, refreshed: true };
 }
@@ -127,8 +137,8 @@ export async function onRequestGet({ request, env }) {
   if (!env.JWT_SECRET) return json({ error: "JWT_SECRET missing" }, 500);
 
   const auth = request.headers.get("Authorization") || "";
-const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
-const token = bearer || getCookie(request, "session");
+  const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : null;
+  const token = bearer || getCookie(request, "session");
   if (!token) return json({ error: "No autorizado" }, 401);
 
   const payload = await verifyHS256JWT(token, env.JWT_SECRET);
@@ -137,36 +147,69 @@ const token = bearer || getCookie(request, "session");
 
   const user = await env.DB.prepare(
     `SELECT id, paid_status, plan, agent_status,
+            grace_until_at,
             vapi_assistant_id, vapi_api_key,
             notify_50, notify_80,
             auto_topup_enabled, auto_topup_amount_eur,
             last_usage_sync_at, spent_eur_this_cycle
      FROM users WHERE id=? LIMIT 1`
-  ).bind(userId).first();
+  )
+    .bind(userId)
+    .first();
 
   if (!user) return json({ error: "No autorizado" }, 401);
 
-const integ = await getGoogleIntegration(env, user.id);
+  const integ = await getGoogleIntegration(env, user.id);
 
-const googleCalendarConnected = !!(integ && integ.refresh_token);
+  const googleCalendarConnected = !!(integ && integ.refresh_token);
+  const googleSheetsConnected =
+    !!(integ && integ.refresh_token) &&
+    typeof integ.scope === "string" &&
+    integ.scope.includes("https://www.googleapis.com/auth/spreadsheets");
 
-// only true if user granted sheets scope
-const googleSheetsConnected =
-  !!(integ && integ.refresh_token) &&
-  typeof integ.scope === "string" &&
-  integ.scope.includes("https://www.googleapis.com/auth/spreadsheets");
+  // Billing banner fields (show for ANY logged-in user)
+  let billingWarningText = null;
+  let billingPauseInDays = null;
 
+  if (user.paid_status && user.paid_status !== "active") {
+    if (user.grace_until_at) {
+      billingPauseInDays = daysLeft(user.grace_until_at);
+      if (billingPauseInDays != null) {
+        if (billingPauseInDays <= 0) {
+          billingWarningText =
+            "Tu suscripción está pendiente. El agente está pausado hasta que se confirme el pago.";
+        } else {
+          billingWarningText =
+            `Tu suscripción está pendiente. El agente se pausará en ${billingPauseInDays} día(s) ` +
+            "si no se confirma el pago.";
+        }
+      } else {
+        billingWarningText = "Tu suscripción está pendiente de pago.";
+      }
+    } else {
+      billingWarningText = "Tu suscripción está pendiente de pago.";
+    }
+  }
+
+  // If not active, keep previous behavior (free-like), but include banner fields
   if (user.paid_status !== "active") {
     return json({
       paid: false,
+      paidStatus: user.paid_status,
+      graceUntilAt: user.grace_until_at,
+      billingWarningText,
+      billingPauseInDays,
+
       planLabel: "Free",
       callsIncluded: 0,
       callsRemaining: 0,
       agentStatus: "preparacion",
+
       notify50: true,
       notify80: true,
       autoTopupEnabled: false,
       autoTopupAmountEur: 10,
+
       googleCalendarConnected,
       googleSheetsConnected,
       vapiAssistantLinked: !!user.vapi_assistant_id,
@@ -180,7 +223,7 @@ const googleSheetsConnected =
   const nowMs = Date.now();
   let spentEur = Number(user.spent_eur_this_cycle || 0);
 
-  if (!last || (nowMs - last) > 10 * 60 * 1000) {
+  if (!last || nowMs - last > 10 * 60 * 1000) {
     const refreshed = await refreshSpentFromVapi({ env, user });
     spentEur = refreshed.spentEur;
   }
@@ -190,10 +233,23 @@ const googleSheetsConnected =
   const remaining = Math.max(0, cfg.callsIncluded - usedCalls);
 
   let agentStatus = user.agent_status || "preparacion";
+
+  // Pause if no calls
   if (remaining <= 0) agentStatus = "pausado";
+
+  // Also pause if subscription non-active AND grace expired (defensive)
+  if (user.paid_status !== "active" && user.grace_until_at) {
+    const d = daysLeft(user.grace_until_at);
+    if (d != null && d <= 0) agentStatus = "pausado";
+  }
 
   return json({
     paid: true,
+    paidStatus: user.paid_status,
+    graceUntilAt: user.grace_until_at,
+    billingWarningText,
+    billingPauseInDays,
+
     plan: user.plan,
     planLabel: cfg.label,
     callsIncluded: cfg.callsIncluded,
@@ -208,7 +264,7 @@ const googleSheetsConnected =
     autoTopupAmountEur: Number(user.auto_topup_amount_eur || 10),
 
     googleCalendarConnected,
-googleSheetsConnected,
+    googleSheetsConnected,
     vapiAssistantLinked: !!user.vapi_assistant_id,
   });
 }

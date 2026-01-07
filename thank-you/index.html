@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Gracias | GanaCitas</title>
+  <link rel="stylesheet" href="/assets/styles.css" />
+</head>
+<body>
+  <div class="container narrow">
+    <div class="card p24" style="margin-top:22px">
+      <h1 class="h2" id="title">Gracias por confiar en nosotros</h1>
+      <p class="muted" id="msg" style="margin-top:10px"></p>
+
+      <div style="margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
+        <a class="btn primary" href="/dashboard/" id="continueBtn">Continuar</a>
+        <span class="muted" style="font-size:12px" id="countdown"></span>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const qs = new URLSearchParams(location.search);
+    const t = qs.get("t"); // "sub" | "topup"
+    const a = qs.get("a"); // amount
+
+    const title = document.getElementById("title");
+    const msg = document.getElementById("msg");
+
+    if (t === "sub") {
+      title.textContent = "¡Gracias por confiar en GanaCitas!";
+      msg.textContent =
+        "Estamos preparando tu agente inteligente para ti. Cuando esté listo (entre 6 y 24h), verás el estado “Activo” en tu panel.";
+    } else if (t === "topup") {
+      title.textContent = "¡Recarga completada!";
+      msg.textContent =
+        `Hemos recibido tu recarga${a ? " de €" + a : ""}. En unos segundos verás tus llamadas actualizadas en el panel.`;
+    } else {
+      title.textContent = "¡Gracias!";
+      msg.textContent = "En unos segundos volverás a tu panel.";
+    }
+
+    let secs = 7;
+    const cd = document.getElementById("countdown");
+    cd.textContent = `Redirigiendo en ${secs}s…`;
+
+    const timer = setInterval(() => {
+      secs--;
+      cd.textContent = `Redirigiendo en ${secs}s…`;
+      if (secs <= 0) {
+        clearInterval(timer);
+        location.href = "/dashboard/";
+      }
+    }, 1000);
+  </script>
+</body>
+</html>
