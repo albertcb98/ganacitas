@@ -21,24 +21,18 @@ window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
 // Optional: settle endpoint after call ends (updates Notion cost, etc.)
 window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
 window.__demoSubmitting = false;
-
 async function loadVapiSDKOnce() {
-  // already loaded
-  if (window.vapiSDK && window.__vapiScriptLoaded) return;
-
-  // if already loading, await it
+  if ((window.vapiSDK || window.Vapi) && window.__vapiScriptLoaded) return;
   if (window.__vapiLoadingPromise) return window.__vapiLoadingPromise;
 
   window.__vapiLoadingPromise = new Promise((resolve, reject) => {
     const s = document.createElement("script");
-
-    // Use the correct URL for the Vapi Web SDK.
-    // If you already have a known working URL, put it here.
     s.src = "https://unpkg.com/@vapi-ai/web/dist/index.js";
     s.async = true;
 
     s.onload = () => {
       window.__vapiScriptLoaded = true;
+      if (!window.vapiSDK && window.Vapi) window.vapiSDK = window.Vapi;
       resolve();
     };
     s.onerror = () => reject(new Error("Failed to load Vapi Web SDK"));
@@ -47,6 +41,7 @@ async function loadVapiSDKOnce() {
 
   return window.__vapiLoadingPromise;
 }
+
 
 function ensureVapiInstance() {
   if (window.vapiInstance) return window.vapiInstance;
@@ -317,7 +312,7 @@ await loadVapiSDKOnce();
           attachVapiEndHandlers(vapi);
         } catch (e2) {
           console.error(e2);
-          showToast("Cargando el asistente… intenta de nuevo en 1s.");
+           showToast(`Error cargando asistente: ${e2?.message || e2}`);
           return;
         }
 
