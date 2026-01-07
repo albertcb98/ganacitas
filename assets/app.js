@@ -22,17 +22,22 @@ window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
 window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
 window.__demoSubmitting = false;
 async function loadVapiSDKOnce() {
-  if ((window.vapiSDK || window.Vapi) && window.__vapiScriptLoaded) return;
+  // already loaded
+  if (window.vapiSDK && window.__vapiScriptLoaded) return;
+
+  // if already loading, await it
   if (window.__vapiLoadingPromise) return window.__vapiLoadingPromise;
 
   window.__vapiLoadingPromise = new Promise((resolve, reject) => {
     const s = document.createElement("script");
-    s.src = "https://unpkg.com/@vapi-ai/web/dist/index.js";
+
+    // Official Vapi HTML Script Tag build (exposes window.vapiSDK.run)
+    s.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
+    s.defer = true;
     s.async = true;
 
     s.onload = () => {
       window.__vapiScriptLoaded = true;
-      if (!window.vapiSDK && window.Vapi) window.vapiSDK = window.Vapi;
       resolve();
     };
     s.onerror = () => reject(new Error("Failed to load Vapi Web SDK"));
@@ -41,6 +46,7 @@ async function loadVapiSDKOnce() {
 
   return window.__vapiLoadingPromise;
 }
+
 
 
 function ensureVapiInstance() {
