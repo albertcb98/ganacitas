@@ -1,3 +1,5 @@
+console.log("NOTION_API_KEY present?", !!env.NOTION_API_KEY, "len:", (env.NOTION_API_KEY || "").length);
+
 export async function onRequestGet({ env }) {
   try {
     const NOTION_API_KEY = env.NOTION_API_KEY;
