@@ -35,7 +35,21 @@ function constantTimeEqual(a, b) {
   return out === 0;
 }
 
-async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceSec = 5 * 60 }) {
+function hexToBytes(hex) {
+  if (!hex || typeof hex !== "string" || hex.length % 2 !== 0) return null;
+  const out = new Uint8Array(hex.length / 2);
+  for (let i = 0; i < out.length; i++) {
+    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+async function verifyStripeSignature({
+  payloadRaw,
+  sigHeader,
+  secret,
+  toleranceSec = 5 * 60,
+}) {
   if (!sigHeader || !secret) return { ok: false, reason: "Missing signature or secret" };
 
   const parts = sigHeader.split(",").map((p) => p.trim());
@@ -46,8 +60,11 @@ async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceS
   const timestamp = Number(tPart.slice(2));
   if (!Number.isFinite(timestamp)) return { ok: false, reason: "Bad timestamp" };
 
+  // replay protection
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - timestamp) > toleranceSec) return { ok: false, reason: "Timestamp outside tolerance" };
+  if (Math.abs(now - timestamp) > toleranceSec) {
+    return { ok: false, reason: "Timestamp outside tolerance" };
+  }
 
   const signedPayload = `${timestamp}.${payloadRaw}`;
 
@@ -56,19 +73,27 @@ async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceS
     toBytes(secret),
     { name: "HMAC", hash: "SHA-256" },
     false,
-    ["sign"]
+    ["verify"]
   );
 
-  const digest = await crypto.subtle.sign("HMAC", key, toBytes(signedPayload));
-  const expectedHex = bytesToHex(new Uint8Array(digest));
-
+  // accept if ANY v1 signature matches
   for (const p of v1Parts) {
-    const sigHex = p.slice(3);
-    if (constantTimeEqual(expectedHex, sigHex)) return { ok: true };
+    const sigHex = p.slice(3); // after "v1="
+    const sigBytes = hexToBytes(sigHex);
+    if (!sigBytes) continue;
+
+    const ok = await crypto.subtle.verify(
+      "HMAC",
+      key,
+      sigBytes,
+      toBytes(signedPayload)
+    );
+    if (ok) return { ok: true };
   }
 
   return { ok: false, reason: "Signature mismatch" };
 }
+
 
 function addDaysISO(isoOrNow, days) {
   const d = isoOrNow ? new Date(isoOrNow) : new Date();
@@ -250,9 +275,7 @@ if (stripeStatus === "canceled") {
         .bind(paid_status, subscriptionId, priceId, plan, graceUntil, nowIso, customerId)
         .run();
 
-      if (paid_status === "canceled") {
-        await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
-      }
+     
       return json({ ok: true });
     }
 
