@@ -22,17 +22,30 @@ export async function onRequestGet({ env }) {
     const rt = (p, name) => (p?.[name]?.rich_text?.[0]?.plain_text || "").trim();
     const num = (p, name) => (typeof p?.[name]?.number === "number" ? p[name].number : 0);
 
-    async function vapiSumCost(vapiPrivateKey) {
-      const res = await fetch("https://api.vapi.ai/call", {
-        headers: { Authorization: `Bearer ${vapiPrivateKey}` },
-      });
-      if (!res.ok) throw new Error(`Vapi /call failed: ${res.status} ${await res.text()}`);
-      const calls = await res.json();
-      if (!Array.isArray(calls)) throw new Error("Unexpected /call response (expected array)");
-      let total = 0;
-      for (const c of calls) total += Number(c?.cost || 0);
-      return total;
-    }
+async function vapiSumCost(vapiPrivateKey) {
+  const res = await fetch("https://api.vapi.ai/call", {
+    headers: { Authorization: `Bearer ${vapiPrivateKey}` },
+  });
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(`Vapi /call failed: ${res.status} ${JSON.stringify(json)}`);
+  }
+
+  // Accept multiple shapes
+  const calls =
+    Array.isArray(json) ? json :
+    Array.isArray(json?.calls) ? json.calls :
+    Array.isArray(json?.data) ? json.data :
+    null;
+
+  if (!calls) throw new Error(`Unexpected /call response shape: ${JSON.stringify(json)}`);
+
+  let total = 0;
+  for (const c of calls) total += Number(c?.cost || 0);
+  return total;
+}
+
 
     async function notionUpdateCost(pageId, newCost) {
       const res = await fetch(`https://api.notion.com/v1/pages/${pageId}`, {
@@ -82,7 +95,6 @@ export async function onRequestGet({ env }) {
     for (const acc of toCheck) {
       try {
         const realCost = await vapiSumCost(acc.vapiPrivateKey);
-        await notionUpdateCost(acc.pageId, realCost);
         checked.push({ ...acc, realCost });
       } catch {
         // broken key etc -> skip
@@ -105,7 +117,11 @@ export async function onRequestGet({ env }) {
 
     available.sort((a, b) => a.realCost - b.realCost);
     const chosen = available[0];
-
+try {
+  await notionUpdateCost(chosen.pageId, chosen.realCost);
+} catch (e) {
+  console.log("[select] notionUpdateCost failed (ignored):", e?.message || e);
+}
     return Response.json({
       ok: true,
       demoPageId: chosen.pageId,

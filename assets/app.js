@@ -269,12 +269,13 @@ function attachDemoHandlers() {
         }
 
         if (!demo || demo.ok !== true) {
-          const msg =
-            demo?.message ||
-            "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
-          showToast(msg);
-          return;
-        }
+  const msg =
+    demo?.detail ||
+    demo?.message ||
+    "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
+  showToast(msg);
+  return;
+}
 
         // Store selected demo config globally
         window.VAPI_WEB = window.VAPI_WEB || {};

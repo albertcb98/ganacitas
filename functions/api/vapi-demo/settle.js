@@ -32,16 +32,30 @@ export async function onRequestPost({ request, env }) {
       if (!res.ok) throw new Error(`Notion update failed: ${res.status} ${await res.text()}`);
     }
 
-    async function vapiSumCost(vapiPrivateKey) {
-      const res = await fetch("https://api.vapi.ai/call", {
-        headers: { Authorization: `Bearer ${vapiPrivateKey}` },
-      });
-      if (!res.ok) throw new Error(`Vapi /call failed: ${res.status} ${await res.text()}`);
-      const calls = await res.json();
-      let total = 0;
-      for (const c of calls) total += Number(c?.cost || 0);
-      return total;
-    }
+ async function vapiSumCost(vapiPrivateKey) {
+  const res = await fetch("https://api.vapi.ai/call", {
+    headers: { Authorization: `Bearer ${vapiPrivateKey}` },
+  });
+  const json = await res.json().catch(() => null);
+
+  if (!res.ok) {
+    throw new Error(`Vapi /call failed: ${res.status} ${JSON.stringify(json)}`);
+  }
+
+  // Accept multiple shapes
+  const calls =
+    Array.isArray(json) ? json :
+    Array.isArray(json?.calls) ? json.calls :
+    Array.isArray(json?.data) ? json.data :
+    null;
+
+  if (!calls) throw new Error(`Unexpected /call response shape: ${JSON.stringify(json)}`);
+
+  let total = 0;
+  for (const c of calls) total += Number(c?.cost || 0);
+  return total;
+}
+
 
     const page = await notionReadPage(demoPageId);
     const props = page.properties || {};
