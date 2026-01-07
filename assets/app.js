@@ -22,6 +22,32 @@ window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
 window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
 window.__demoSubmitting = false;
 
+async function loadVapiSDKOnce() {
+  // already loaded
+  if (window.vapiSDK && window.__vapiScriptLoaded) return;
+
+  // if already loading, await it
+  if (window.__vapiLoadingPromise) return window.__vapiLoadingPromise;
+
+  window.__vapiLoadingPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+
+    // Use the correct URL for the Vapi Web SDK.
+    // If you already have a known working URL, put it here.
+    s.src = "https://unpkg.com/@vapi-ai/web/dist/index.js";
+    s.async = true;
+
+    s.onload = () => {
+      window.__vapiScriptLoaded = true;
+      resolve();
+    };
+    s.onerror = () => reject(new Error("Failed to load Vapi Web SDK"));
+    document.head.appendChild(s);
+  });
+
+  return window.__vapiLoadingPromise;
+}
+
 function ensureVapiInstance() {
   if (window.vapiInstance) return window.vapiInstance;
 
@@ -286,6 +312,7 @@ function attachDemoHandlers() {
         // 3) initialize Vapi ONLY now
         let vapi;
         try {
+await loadVapiSDKOnce();
           vapi = ensureVapiInstance();
           attachVapiEndHandlers(vapi);
         } catch (e2) {
