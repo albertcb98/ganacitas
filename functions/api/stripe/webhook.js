@@ -212,6 +212,20 @@ export async function onRequestPost({ request, env }) {
       else if (stripeStatus === "canceled") paid_status = "canceled";
       else paid_status = "past_due"; // safe default
 
+// If Stripe says canceled, cancel immediately (no grace)
+if (stripeStatus === "canceled") {
+  await env.DB.prepare(
+    `UPDATE users
+     SET paid_status='canceled',
+         grace_until_at=NULL,
+         updated_at=?
+     WHERE stripe_customer_id=?`
+  ).bind(nowIso, customerId).run();
+
+  await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
+  return json({ ok: true });
+}
+
       // Grace rules:
       // - canceled: immediate cancel (no grace)
       // - past_due/unpaid: grace 5 days
