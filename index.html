@@ -70,7 +70,11 @@
           <span class="label">¿Cuál es el nombre de tu empresa?</span>
           <input name="company" type="text" placeholder="Ej. Clínica Dental Sonríe" autocomplete="organization" required />
         </label>
-
+<!-- ✅ CAPTCHA -->
+  <div class="cf-turnstile"
+       data-sitekey="0x4AAAAAACLhv7z_6m8JNaLW"
+       data-theme="dark">
+  </div>
         <div class="modal-actions">
           <button class="btn" type="button" data-close="#demoModal">Cancelar</button>
           <button class="btn primary" type="submit">Probar Asistente Telefónico</button>
@@ -91,6 +95,7 @@
   };
 </script>
 
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>
 <script src="/assets/app.js" defer></script>
 
   <a class="whatsapp-float"

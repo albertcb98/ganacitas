@@ -47,8 +47,15 @@ async function loadVapiSDKOnce() {
   return window.__vapiLoadingPromise;
 }
 
+function getTurnstileToken() {
+  return document.querySelector('input[name="cf-turnstile-response"]')?.value || null;
+}
 
-
+function resetTurnstile() {
+  if (window.turnstile) {
+    try { window.turnstile.reset(); } catch {}
+  }
+}
 function ensureVapiInstance() {
   if (window.vapiInstance) return window.vapiInstance;
 
@@ -140,19 +147,21 @@ function normalizeCompanyName(str) {
   return (str || "").toString().trim().replace(/\s+/g, " ");
 }
 
-async function fetchAvailableDemo() {
-  const url = window.MYAGENCY_CONFIG.vapiDemoSelectUrl;
-  if (!url) throw new Error("Missing MYAGENCY_CONFIG.vapiDemoSelectUrl");
+async function fetchAvailableDemo(turnstileToken) {
+  if (!turnstileToken) throw new Error("Captcha missing");
 
-  const res = await fetch(url, { method: "GET" });
+  const url = new URL(window.MYAGENCY_CONFIG.vapiDemoSelectUrl, window.location.origin);
+  url.searchParams.set("token", turnstileToken);
+
+  const res = await fetch(url.toString(), { method: "GET" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Demo select failed: HTTP ${res.status} ${text}`.trim());
+    throw new Error(`Demo select failed: ${res.status} ${text}`);
   }
 
-  const data = await res.json().catch(() => ({}));
-  return data;
+  return await res.json();
 }
+
 
 async function settleDemoUsage({ demoPageId, callId }) {
   const url = window.MYAGENCY_CONFIG.vapiDemoSettleUrl;
@@ -281,26 +290,43 @@ function attachDemoHandlers() {
           submitBtn.textContent = "Procesando…";
         }
 
-        // 1) send to n8n
-        await postPlainJSON(startUrl, payload);
+// 1) captcha + pick an available demo FIRST (so bots don't hit n8n)
+showToast("Verificando…");
 
-        // 2) ask backend for an available demo account (publicKey + assistantId)
-        showToast("Buscando un demo disponible…");
-        let demo;
-        try {
-          demo = await fetchAvailableDemo();
-        } catch (selErr) {
-          console.error(selErr);
-          showToast("No se pudo verificar disponibilidad. Intenta de nuevo en unos minutos.");
-          return;
-        }
+const captchaToken = getTurnstileToken();
+if (!captchaToken) {
+  showToast("Completa la verificación antes de continuar.");
+  resetTurnstile();
+  return;
+}
 
-        if (!demo || demo.ok !== true) {
+let demo;
+try {
+  demo = await fetchAvailableDemo(captchaToken);
+} catch (selErr) {
+  console.error(selErr);
+  showToast("No se pudo verificar disponibilidad. Intenta de nuevo.");
+  resetTurnstile();
+  return;
+}
+
+if (!demo || demo.ok !== true) {
   const msg =
     demo?.detail ||
     demo?.message ||
     "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
   showToast(msg);
+  resetTurnstile();
+  return;
+}
+
+// 2) only now send to n8n (human verified + demo available)
+try {
+  await postPlainJSON(startUrl, payload);
+} catch (n8nErr) {
+  console.error(n8nErr);
+  showToast("Error enviando el formulario. Intenta de nuevo.");
+  resetTurnstile();
   return;
 }
 
@@ -319,6 +345,7 @@ await loadVapiSDKOnce();
         } catch (e2) {
           console.error(e2);
            showToast(`Error cargando asistente: ${e2?.message || e2}`);
+  resetTurnstile();
           return;
         }
 
@@ -330,6 +357,7 @@ await loadVapiSDKOnce();
           const result = await vapi.start(window.VAPI_WEB.assistantId, {
             variableValues: { company: payload.company },
           });
+resetTurnstile();
 
           // Best effort: capture callId if returned
           const callId = result?.call?.id || result?.id || result?.callId || null;
@@ -337,6 +365,7 @@ await loadVapiSDKOnce();
 
         } catch (startErr) {
           console.error(startErr);
+  resetTurnstile();
           const msg = (startErr && (startErr.errorMsg || startErr.message)) || "";
           if (msg.toLowerCase().includes("meeting has ended")) {
             showToast("La llamada terminó inmediatamente. Revisa permisos del micrófono y configuración del asistente.");
