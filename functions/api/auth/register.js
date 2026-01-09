@@ -42,9 +42,6 @@ export async function onRequestPost({ request, env }) {
     );
   }
 
-  // Allow local http dev to set cookies; keep Secure on https
-  const isHttps = new URL(request.url).protocol === "https:";
-
   const id = newId();
   const now = new Date().toISOString();
 
@@ -100,13 +97,13 @@ export async function onRequestPost({ request, env }) {
     console.log("JWT ERROR:", e);
     return json({ error: "Error de sesión" }, 500);
   }
-
+const secure = true;
   return json(
     { ok: true },
     200,
     {
       "Set-Cookie": setCookie("session", token, {
-        secure: isHttps,
+        secure,
         maxAge: 60 * 60 * 24 * 7, // 7 days
         sameSite: "Lax",
         path: "/",

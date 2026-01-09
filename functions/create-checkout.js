@@ -14,7 +14,12 @@ export async function onRequestPost({ request, env }) {
   const token = cookies.session;
   if (!token) return json({ error: "Unauthorized" }, 401);
 
-  const payload = await verifyJWT(env.JWT_SECRET, token);
+ let payload;
+try {
+  payload = await verifyJWT(env.JWT_SECRET, token);
+} catch {
+  return json({ error: "Unauthorized" }, 401);
+}
   if (!payload?.sub) return json({ error: "Unauthorized" }, 401);
 
 const user = await env.DB.prepare(
