@@ -12,14 +12,122 @@
       <h1 class="h2" id="title">Gracias por confiar en nosotros</h1>
       <p class="muted" id="msg" style="margin-top:10px"></p>
 
+      <hr class="sep" style="margin-top:16px">
+
+      <!-- ✅ Sales attribution -->
+      <div style="margin-top:14px">
+        <div class="h3">Atribución comercial</div>
+        <p class="muted" style="margin-top:6px; font-size:13px">
+          Para asignar comisiones correctamente (opcional).
+        </p>
+
+        <div class="pill" style="margin-top:12px; display:flex; flex-wrap:wrap; gap:14px; align-items:center">
+          <span>¿Hablaste con algún comercial?</span>
+
+          <label style="display:flex; gap:8px; align-items:center">
+            <input type="radio" name="talkedSales" value="si" id="talkedSalesYes">
+            <span>Sí</span>
+          </label>
+
+          <label style="display:flex; gap:8px; align-items:center">
+            <input type="radio" name="talkedSales" value="no" id="talkedSalesNo">
+            <span>No</span>
+          </label>
+        </div>
+
+        <div id="salesNameRow" style="margin-top:12px; display:none; align-items:center; gap:12px; flex-wrap:wrap">
+          <div class="muted" style="min-width:190px">Hablaste con (comercial):</div>
+          <input
+            id="salesName"
+            type="text"
+            placeholder="Ej. Carlos / Laura / Miguel"
+            style="max-width:280px"
+            autocomplete="name"
+          />
+        </div>
+
+        <p class="muted" id="salesError" style="margin-top:10px; display:none; font-size:13px">
+          ⚠️ <span id="salesErrorTxt"></span>
+        </p>
+      </div>
+
       <div style="margin-top:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap">
-        <a class="btn primary" href="/dashboard/" id="continueBtn">Continuar</a>
+        <!-- CHANGED: button instead of link so we can validate + save -->
+        <button class="btn primary" id="continueBtn" type="button">Continuar</button>
         <span class="muted" style="font-size:12px" id="countdown"></span>
+      </div>
+    </div>
+
+    <!-- ✅ Footer -->
+    <div class="footer" style="margin-top:18px">
+      <div>© 2025 GanaCitas • ganacitas.com</div>
+      <div style="display:flex; gap:12px; flex-wrap:wrap">
+        <a href="/terminos-del-servicio/" class="muted">Términos del servicio</a>
+        <a href="/politica-de-privacidad/" class="muted">Política de privacidad</a>
+        <a href="https://wa.me/" class="muted" target="_blank" rel="noreferrer">WhatsApp</a>
       </div>
     </div>
   </div>
 
+  <div id="toast" class="toast"></div>
+
   <script>
+    // ---- UI helpers
+    function showToast(msg){
+      const t = document.getElementById("toast");
+      if(!t) return;
+      t.textContent = msg;
+      t.style.display = "block";
+      clearTimeout(window.__toastTimer);
+      window.__toastTimer = setTimeout(()=> t.style.display="none", 3500);
+    }
+
+    function setError(msg){
+      const box = document.getElementById("salesError");
+      const txt = document.getElementById("salesErrorTxt");
+      if(!box || !txt) return;
+      if(!msg){
+        box.style.display = "none";
+        txt.textContent = "";
+        return;
+      }
+      box.style.display = "block";
+      txt.textContent = msg;
+    }
+
+    async function postJSON(url, payload){
+      const r = await fetch(url, {
+        method:"POST",
+        credentials:"include",
+        headers:{ "Content-Type":"application/json" },
+        body: JSON.stringify(payload || {})
+      });
+      const data = await r.json().catch(()=> ({}));
+      if(!r.ok) throw new Error(data?.error || data?.message || "Error");
+      return data;
+    }
+
+    // ---- Normalize (simple + safe)
+    function normalizeName(str){
+      const s = (str || "").toString().trim().replace(/\s+/g, " ");
+      if(!s) return "";
+      // Title Case basic (works fine for most Spanish names; preserves accents)
+      return s.split(" ").map(w => {
+        if(!w) return w;
+        const lower = w.toLowerCase();
+        return lower.charAt(0).toUpperCase() + lower.slice(1);
+      }).join(" ");
+    }
+
+    function selectedValue(){
+      const yes = document.getElementById("talkedSalesYes");
+      const no = document.getElementById("talkedSalesNo");
+      if (yes?.checked) return "si";
+      if (no?.checked) return "no";
+      return null;
+    }
+
+    // ---- Your existing thank-you logic
     const qs = new URLSearchParams(location.search);
     const t = qs.get("t"); // "sub" | "topup"
     const a = qs.get("a"); // amount
@@ -37,21 +145,75 @@
         `Hemos recibido tu recarga${a ? " de €" + a : ""}. En unos segundos verás tus llamadas actualizadas en el panel.`;
     } else {
       title.textContent = "¡Gracias!";
-      msg.textContent = "En unos segundos volverás a tu panel.";
+      msg.textContent = "Completa la atribución (opcional) y continúa a tu panel.";
     }
 
-    let secs = 7;
+    // ---- Disable auto redirect (you asked for this)
     const cd = document.getElementById("countdown");
-    cd.textContent = `Redirigiendo en ${secs}s…`;
+    if (cd) cd.textContent = ""; // no countdown
 
-    const timer = setInterval(() => {
-      secs--;
-      cd.textContent = `Redirigiendo en ${secs}s…`;
-      if (secs <= 0) {
-        clearInterval(timer);
-        location.href = "/dashboard/";
+    // ---- Sales attribution UI
+    const yes = document.getElementById("talkedSalesYes");
+    const no = document.getElementById("talkedSalesNo");
+    const row = document.getElementById("salesNameRow");
+    const inp = document.getElementById("salesName");
+    const btn = document.getElementById("continueBtn");
+
+    function onToggle(){
+      setError(null);
+      if (yes.checked){
+        row.style.display = "flex";
+        setTimeout(()=> inp.focus(), 50);
+      } else {
+        row.style.display = "none";
       }
-    }, 1000);
+    }
+
+    yes.addEventListener("change", onToggle);
+    no.addEventListener("change", onToggle);
+
+    // ---- Continue handler: validate + save to DB
+    btn.addEventListener("click", async () => {
+      setError(null);
+
+      const v = selectedValue();
+      if (!v){
+        setError("¿Hablaste con algún comercial? Selecciona Sí o No.");
+        showToast("Selecciona Sí o No.");
+        return;
+      }
+
+      let salesRepName = "";
+      if (v === "si"){
+        salesRepName = normalizeName(inp.value);
+        if (!salesRepName){
+          setError("Indica el nombre del comercial para continuar (o selecciona No).");
+          showToast("Indica el nombre del comercial.");
+          inp.focus();
+          return;
+        }
+      }
+
+      // Save attribution into your DB (user session)
+      // You implement this endpoint server-side.
+      // Suggested payload includes type so you can store per purchase event if you want.
+      try {
+        await postJSON("/api/attribution/sales-rep", {
+          talkedToSales: v === "si",
+          salesRepName: salesRepName || null,
+          context: { t: t || null, amount: a || null }
+        });
+      } catch (e) {
+        // Don’t block user forever — but do show the error so you know if endpoint missing
+        console.error(e);
+        setError("No se pudo guardar la atribución. Intenta de nuevo o continúa sin comercial (No).");
+        showToast(e?.message || "No se pudo guardar la atribución.");
+        return;
+      }
+
+      // Go to dashboard
+      location.href = "/dashboard/";
+    });
   </script>
 </body>
 </html>
