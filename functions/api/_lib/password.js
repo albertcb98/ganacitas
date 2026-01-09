@@ -26,14 +26,30 @@ export async function hashPassword(password) {
 
 export async function verifyPassword(password, stored) {
   try {
-    const [kind, iterStr, , saltHex, hashHex] = stored.split("$");
+    const parts = String(stored || "").split("$");
+
+    // New format: pbkdf2$ITER$SALT$HASH  (4 parts)
+    // Old/legacy format (if ever existed): pbkdf2$ITER$$SALT$HASH (5 parts, empty slot)
+    let kind, iterStr, saltHex, hashHex;
+
+    if (parts.length === 4) {
+      [kind, iterStr, saltHex, hashHex] = parts;
+    } else if (parts.length === 5) {
+      // pbkdf2$ITER$""$SALT$HASH
+      [kind, iterStr, , saltHex, hashHex] = parts;
+    } else {
+      return false;
+    }
+
     if (kind !== "pbkdf2") return false;
 
     const iterations = parseInt(iterStr, 10);
     if (!Number.isFinite(iterations) || iterations <= 0) return false;
 
-    // Enforce runtime limit (older hashes might be >100000)
+    // Enforce runtime limit
     if (iterations > 100000) return false;
+
+    if (!saltHex || !hashHex) return false;
 
     const salt = fromHex(saltHex);
 
@@ -57,6 +73,7 @@ export async function verifyPassword(password, stored) {
     return false;
   }
 }
+
 
 function toHex(u8) {
   return [...u8].map((b) => b.toString(16).padStart(2, "0")).join("");
