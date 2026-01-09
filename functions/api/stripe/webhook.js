@@ -111,9 +111,9 @@ function planFromPriceId(env, priceId) {
 
 function topupAmountFromPriceId(env, priceId) {
   if (!priceId) return 0;
-  if (priceId === env.STRIPE_TOPUP_10_PRICE_ID) return 10;
-  if (priceId === env.STRIPE_TOPUP_20_PRICE_ID) return 20;
-  if (priceId === env.STRIPE_TOPUP_50_PRICE_ID) return 50;
+  if (priceId === env.STRIPE_10_TOPUP) return 10;
+  if (priceId === env.STRIPE_20_TOPUP) return 20;
+  if (priceId === env.STRIPE_50_TOPUP) return 50;
   return 0;
 }
 
@@ -182,7 +182,9 @@ export async function onRequestPost({ request, env }) {
            WHERE id=?`
         ).bind(customerId, subscriptionId, nowIso, userId).run();
 
-        await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId}`);
+    const rep = session?.metadata?.sales_rep_name || "none";
+await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} • comercial=${rep}`);
+
         return json({ ok: true });
       }
 
@@ -340,7 +342,11 @@ if (stripeStatus === "canceled") {
          WHERE stripe_customer_id=?`
       ).bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId).run();
 
-      await notifyTelegram(env, `✅ Pago OK: ${customerId} ciclo ${cycleStart} → ${cycleEnd}`);
+const repRow = await env.DB.prepare(
+  "SELECT sales_rep_name FROM users WHERE stripe_customer_id = ?"
+).bind(customerId).first();
+
+      await notifyTelegram(env, `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart} → ${cycleEnd}`);
       return json({ ok: true });
     }
 

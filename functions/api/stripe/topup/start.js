@@ -45,10 +45,20 @@ export async function onRequestGet({ request, env }) {
   const token = getCookie(request, "session");
   if (!token) return json({ error:"No autorizado" }, 401);
 
-  const payload = await verifyJWT(env.JWT_SECRET, token);
+  let payload;
+try {
+  payload = await verifyJWT(env.JWT_SECRET, token);
+} catch {
+  return json({ error:"No autorizado" }, 401);
+}
   const userId = payload?.sub;
   if (!userId) return json({ error:"No autorizado" }, 401);
+const urow = await env.DB.prepare(
+  "SELECT talked_to_s, sales_rep_name FROM users WHERE id = ?"
+).bind(userId).first();
 
+const repName = (urow?.sales_rep_name || "").toString().trim().replace(/\s+/g, " ");
+const talkedTo = urow?.talked_to_s ? "1" : "0";
   const u = new URL(request.url);
   const amount = Number(u.searchParams.get("amount") || 0);
 
@@ -79,6 +89,14 @@ export async function onRequestGet({ request, env }) {
   // Optional: helps in webhook reading (nice-to-have)
   body.set("metadata[user_id]", userId);
   body.set("metadata[topup_eur]", String(amount));
+body.set("metadata[talked_to_sales_rep]", talkedTo);
+body.set("metadata[sales_rep_name]", repName || "none");
+
+// Best practice: also put metadata on the PaymentIntent
+body.set("payment_intent_data[metadata][user_id]", userId);
+body.set("payment_intent_data[metadata][topup_eur]", String(amount));
+body.set("payment_intent_data[metadata][talked_to_sales_rep]", talkedTo);
+body.set("payment_intent_data[metadata][sales_rep_name]", repName || "none");
 
   const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",

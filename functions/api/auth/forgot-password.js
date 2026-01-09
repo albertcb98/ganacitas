@@ -27,7 +27,7 @@ async function sha256Hex(str) {
 
 function getBaseUrl(request, env) {
   // Prefer explicit env in production (recommended):
-  // APP_BASE_URL = https://ganacitas.pages.dev
+  // APP_BASE_URL = https://ganacitas.com
   if (env.APP_BASE_URL && typeof env.APP_BASE_URL === "string") {
     return env.APP_BASE_URL.replace(/\/+$/, "");
   }

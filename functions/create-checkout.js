@@ -17,9 +17,9 @@ export async function onRequestPost({ request, env }) {
   const payload = await verifyJWT(env.JWT_SECRET, token);
   if (!payload?.sub) return json({ error: "Unauthorized" }, 401);
 
-  const user = await env.DB.prepare(
-    "SELECT id, email FROM users WHERE id = ?"
-  ).bind(payload.sub).first();
+const user = await env.DB.prepare(
+  "SELECT id, email, stripe_customer_id, talked_to_s, sales_rep_name FROM users WHERE id = ?"
+).bind(payload.sub).first();
 
   if (!user) return json({ error: "Unauthorized" }, 401);
 
@@ -40,23 +40,50 @@ export async function onRequestPost({ request, env }) {
 
   const siteUrl = env.SITE_URL || new URL(request.url).origin;
 
-  const params = new URLSearchParams({
-    mode: "subscription",
-    success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
+  // Build params
+const params = new URLSearchParams({
+  mode: "subscription",
+  success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+  cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
 
-    // IMPORTANT: tie Stripe session to your user
-    client_reference_id: user.id,
-    customer_email: user.email,
+  // tie Stripe session to your user
+  client_reference_id: user.id,
 
-    // recurring subscription
-    "line_items[0][price]": cfg.recurring,
-    "line_items[0][quantity]": "1",
+  // recurring subscription
+  "line_items[0][price]": cfg.recurring,
+  "line_items[0][quantity]": "1",
 
-    // one-time setup fee (charged at checkout)
-    "line_items[1][price]": cfg.setup,
-    "line_items[1][quantity]": "1",
-  });
+  // one-time setup fee (charged at checkout)
+  "line_items[1][price]": cfg.setup,
+  "line_items[1][quantity]": "1",
+});
+
+// Reuse Stripe customer if exists (prevents duplicates)
+if (user.stripe_customer_id) {
+  params.set("customer", user.stripe_customer_id);
+} else {
+  params.set("customer_email", user.email);
+}
+
+// Normalize rep fields from DB
+const repName = (user.sales_rep_name || "")
+  .toString()
+  .trim()
+  .replace(/\s+/g, " ");
+const talkedTo = user.talked_to_s ? "1" : "0";
+
+// Metadata on Checkout Session
+params.set("metadata[user_id]", user.id);
+params.set("metadata[plan]", plan);
+params.set("metadata[talked_to_sales_rep]", talkedTo);
+params.set("metadata[sales_rep_name]", repName || "none");
+
+// Metadata on the Subscription that will be created (best for renewals/invoices)
+params.set("subscription_data[metadata][user_id]", user.id);
+params.set("subscription_data[metadata][plan]", plan);
+params.set("subscription_data[metadata][talked_to_sales_rep]", talkedTo);
+params.set("subscription_data[metadata][sales_rep_name]", repName || "none");
+
 
   const stripeRes = await fetch("https://api.stripe.com/v1/checkout/sessions", {
     method: "POST",
