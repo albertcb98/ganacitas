@@ -28,7 +28,9 @@ export async function onRequestPost({ request, env }) {
   const e = email.toLowerCase().trim();
 
   // Allow local http dev to set cookies; keep Secure on https.
-  const isHttps = new URL(request.url).protocol === "https:";
+
+
+
 
   // 4️⃣ Use normalized email
   const row = await env.DB.prepare(
@@ -48,12 +50,14 @@ export async function onRequestPost({ request, env }) {
     sub: row.id,
     email: row.email,
   });
+const secure = true; // force secure
 
   return json(
     { ok: true },
     200,
     {
       "Set-Cookie": setCookie("session", token, {
+	secure
         secure: isHttps,
         maxAge: 60 * 60 * 24 * 7, // 7 days
       }),
