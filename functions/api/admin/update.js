@@ -47,9 +47,9 @@ export async function onRequestPost({ request, env }) {
 
   if (!userId || !action) return json({ error:"Missing userId/action" }, 400);
 
-  const user = await env.DB.prepare(
-    "SELECT id, grace_until_at FROM users WHERE id=? LIMIT 1"
-  ).bind(userId).first();
+const user = await env.DB.prepare(
+  "SELECT id, grace_until_at, vapi_phone_number_id FROM users WHERE id=? LIMIT 1"
+).bind(userId).first();
 
   if (!user) return json({ error:"User not found" }, 404);
 

@@ -64,6 +64,9 @@
           <button class="btn small" type="button" id="btnGrace5">+5 días gracia</button>
           <button class="btn small" type="button" id="btnGraceRemove">Quitar gracia</button>
           <button class="btn small" type="button" id="btnPauseAgent">Pausar agente</button>
+ <button class="btn small danger" type="button" id="btnDeletePhone">
+    Eliminar número (Vapi)
+  </button>
         </div>
 
         <div class="muted" style="margin-top:10px; font-size:12px">
@@ -98,6 +101,33 @@ function td(s){
   const el = document.createElement("td");
   el.textContent = s == null ? "" : String(s);
   return el;
+}
+function fmtDate(iso){
+  if(!iso) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  return d.toLocaleString("es-ES", {
+    year:"numeric", month:"2-digit", day:"2-digit",
+    hour:"2-digit", minute:"2-digit"
+  });
+}
+
+function fmtRange(a, b){
+  if(!a && !b) return "—";
+  return `${fmtDate(a)} → ${fmtDate(b)}`;
+}
+
+function syncLabel(iso){
+  if(!iso) return "—";
+  const d = new Date(iso);
+  const mins = Math.round((Date.now() - d.getTime()) / 60000);
+  if (!Number.isFinite(mins)) return fmtDate(iso);
+  if (mins < 2) return "hace 1 min";
+  if (mins < 60) return `hace ${mins} min`;
+  const hrs = Math.round(mins / 60);
+  if (hrs < 24) return `hace ${hrs} h`;
+  const days = Math.round(hrs / 24);
+  return `hace ${days} d`;
 }
 
 function graceLabel(iso){
@@ -165,8 +195,8 @@ async function refreshTable(){
     tr.appendChild(td(graceLabel(u.grace_until_at)));
     tr.appendChild(td(u.agent_status || "—"));
     tr.appendChild(td(u.spent_eur_this_cycle ?? 0));
-    tr.appendChild(td(u.last_usage_sync_at || ""));
-    tr.appendChild(td((u.cycle_start_at||"") + " → " + (u.cycle_end_at||"")));
+   tr.appendChild(td(syncLabel(u.last_usage_sync_at)));
+tr.appendChild(td(fmtRange(u.cycle_start_at, u.cycle_end_at)));
     tr.appendChild(td(u.vapi_assistant_id ? "✅" : "—"));
     tr.appendChild(td(u.mcp_url ? "✅" : "—"));
 
@@ -176,7 +206,7 @@ async function refreshTable(){
 
 async function runAction(action){
   if(!SELECTED?.id) return;
-  await postJSON("/api/admin/user/update", { userId: SELECTED.id, action });
+  await postJSON("/api/admin/update", { userId: SELECTED.id, action });
   await refreshTable();
 
   // refresh modal values too
@@ -187,6 +217,8 @@ async function runAction(action){
 document.getElementById("btnGrace5").addEventListener("click", ()=> runAction("grace_plus_5"));
 document.getElementById("btnGraceRemove").addEventListener("click", ()=> runAction("grace_remove"));
 document.getElementById("btnPauseAgent").addEventListener("click", ()=> runAction("pause_agent"));
+document.getElementById("btnDeletePhone")
+  .addEventListener("click", ()=> runAction("delete_phone_number"));
 
 (async ()=>{
   try{

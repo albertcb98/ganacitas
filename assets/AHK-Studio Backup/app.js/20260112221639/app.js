@@ -2,37 +2,83 @@
  * Minimal JS for:
  * - Modal open/close
  * - Form submit to n8n webhook
- * - Pick an available Vapi demo account from YOUR backend (server-side)
- * - Start Vapi web call in browser
- * - Poll YOUR backend for the last created calendar event and show “✅ Cita creada”
- *
- * Backend endpoints expected:
- *   GET  /api/vapi-demo/select?token=TURNSTILE_TOKEN
- *        -> { ok:true, demoPageId, publicKey, assistantId } OR { ok:false, message/detail }
- *
- *   POST /api/vapi-demo/session
- *        -> { demoSessionId }
- *
- *   GET  /api/vapi-demo/status?demoSessionId=...
- *        -> { lastEvent: { summary, start, htmlLink } } (or null)
- *
- *   POST /api/vapi-demo/settle   (optional best-effort)
+ * - Fetch available Vapi demo credentials from YOUR backend
+ * - Start Vapi web call in browser after webhook succeeds
  *
  * IMPORTANT:
  * - Do NOT put Notion/Vapi private keys in frontend.
+ * - This file expects your backend endpoints:
+ *    GET  /api/vapi-demo/select  -> { ok:true, demoPageId, publicKey, assistantId } OR { ok:false, message }
+ *    POST /api/vapi-demo/settle  -> (optional) { ok:true }  (best effort)
  */
 
 window.MYAGENCY_CONFIG = window.MYAGENCY_CONFIG || {};
 window.MYAGENCY_CONFIG.n8nStartWebhookUrl =
   "https://n8n.worfklow.fun/webhook/ganacitas/start";
 
+// Your backend route that selects an available demo account
 window.MYAGENCY_CONFIG.vapiDemoSelectUrl = "/api/vapi-demo/select";
-window.MYAGENCY_CONFIG.vapiDemoSessionUrl = "/api/vapi-demo/session";
-window.MYAGENCY_CONFIG.vapiDemoStatusUrl = "/api/vapi-demo/status";
+// Optional: settle endpoint after call ends (updates Notion cost, etc.)
 window.MYAGENCY_CONFIG.vapiDemoSettleUrl = "/api/vapi-demo/settle";
-
 window.__demoSubmitting = false;
-window.__demoPolling = false;
+async function loadVapiSDKOnce() {
+  // already loaded
+  if (window.vapiSDK && window.__vapiScriptLoaded) return;
+
+  // if already loading, await it
+  if (window.__vapiLoadingPromise) return window.__vapiLoadingPromise;
+
+  window.__vapiLoadingPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+
+    // Official Vapi HTML Script Tag build (exposes window.vapiSDK.run)
+    s.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
+    s.defer = true;
+    s.async = true;
+
+    s.onload = () => {
+      window.__vapiScriptLoaded = true;
+      resolve();
+    };
+    s.onerror = () => reject(new Error("Failed to load Vapi Web SDK"));
+    document.head.appendChild(s);
+  });
+
+  return window.__vapiLoadingPromise;
+}
+
+function getTurnstileToken() {
+  return document.querySelector('input[name="cf-turnstile-response"]')?.value || null;
+}
+
+function resetTurnstile() {
+  if (window.turnstile) {
+    try { window.turnstile.reset(); } catch {}
+  }
+}
+function ensureVapiInstance() {
+  if (window.vapiInstance) return window.vapiInstance;
+
+  if (!window.__vapiScriptLoaded || !window.vapiSDK) {
+    throw new Error("Vapi script not loaded yet");
+  }
+
+  if (!window.VAPI_WEB?.publicKey) {
+    throw new Error("Missing VAPI_WEB.publicKey (demo not selected)");
+  }
+  if (!window.VAPI_WEB?.assistantId) {
+    throw new Error("Missing VAPI_WEB.assistantId (demo not selected)");
+  }
+
+  // This injects Vapi UI (phone button), so we only do it when user starts a call.
+  window.vapiInstance = window.vapiSDK.run({
+    apiKey: window.VAPI_WEB.publicKey,
+    assistant: window.VAPI_WEB.assistantId,
+    config: {},
+  });
+
+  return window.vapiInstance;
+}
 
 function $(sel, root = document) { return root.querySelector(sel); }
 function $all(sel, root = document) { return [...root.querySelectorAll(sel)]; }
@@ -66,40 +112,25 @@ async function postJSON(url, payload, headers = {}) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json", ...headers },
-    body: JSON.stringify(payload || {}),
+    body: JSON.stringify(payload),
   });
 
-  const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json")
-    ? await res.json().catch(() => ({}))
-    : { text: await res.text().catch(() => "") };
-
   if (!res.ok) {
-    throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
+    const text = await res.text().catch(() => "");
+    throw new Error(`HTTP ${res.status} ${text}`.trim());
   }
-  return data;
-}
-
-async function getJSON(url) {
-  const res = await fetch(url, { method: "GET" });
 
   const ct = res.headers.get("content-type") || "";
-  const data = ct.includes("application/json")
-    ? await res.json().catch(() => ({}))
-    : { text: await res.text().catch(() => "") };
-
-  if (!res.ok) {
-    throw new Error(data?.error || data?.message || `HTTP ${res.status}`);
-  }
-  return data;
+  if (ct.includes("application/json")) return await res.json();
+  return { ok: true, text: await res.text().catch(() => "") };
 }
 
-// Your existing n8n webhook expects text/plain; keep this separate
+// Your existing webhook expects text/plain; keep this separate
 async function postPlainJSON(url, payload) {
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=UTF-8" },
-    body: JSON.stringify(payload || {}),
+    body: JSON.stringify(payload),
   });
 
   if (!res.ok) {
@@ -116,61 +147,6 @@ function normalizeCompanyName(str) {
   return (str || "").toString().trim().replace(/\s+/g, " ");
 }
 
-function getTurnstileToken() {
-  return document.querySelector('input[name="cf-turnstile-response"]')?.value || null;
-}
-
-function resetTurnstile() {
-  if (window.turnstile) {
-    try { window.turnstile.reset(); } catch {}
-  }
-}
-
-async function loadVapiSDKOnce() {
-  if (window.vapiSDK && window.__vapiScriptLoaded) return;
-  if (window.__vapiLoadingPromise) return window.__vapiLoadingPromise;
-
-  window.__vapiLoadingPromise = new Promise((resolve, reject) => {
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/gh/VapiAI/html-script-tag@latest/dist/assets/index.js";
-    s.defer = true;
-    s.async = true;
-
-    s.onload = () => {
-      window.__vapiScriptLoaded = true;
-      resolve();
-    };
-    s.onerror = () => reject(new Error("Failed to load Vapi Web SDK"));
-
-    document.head.appendChild(s);
-  });
-
-  return window.__vapiLoadingPromise;
-}
-
-function ensureVapiInstance() {
-  if (window.vapiInstance) return window.vapiInstance;
-
-  if (!window.__vapiScriptLoaded || !window.vapiSDK) {
-    throw new Error("Vapi script not loaded yet");
-  }
-  if (!window.VAPI_WEB?.publicKey) {
-    throw new Error("Missing VAPI_WEB.publicKey (demo not selected)");
-  }
-  if (!window.VAPI_WEB?.assistantId) {
-    throw new Error("Missing VAPI_WEB.assistantId (demo not selected)");
-  }
-
-  // Inject Vapi UI only when user starts the call.
-  window.vapiInstance = window.vapiSDK.run({
-    apiKey: window.VAPI_WEB.publicKey,
-    assistant: window.VAPI_WEB.assistantId,
-    config: {},
-  });
-
-  return window.vapiInstance;
-}
-
 async function fetchAvailableDemo(turnstileToken) {
   if (!turnstileToken) throw new Error("Captcha missing");
 
@@ -180,79 +156,12 @@ async function fetchAvailableDemo(turnstileToken) {
   const res = await fetch(url.toString(), { method: "GET" });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
-    throw new Error(`Demo select failed: ${res.status} ${text}`.trim());
+    throw new Error(`Demo select failed: ${res.status} ${text}`);
   }
-  return await res.json().catch(() => ({}));
+
+  return await res.json();
 }
 
-async function ensureDemoSessionId() {
-  let id = localStorage.getItem("demoSessionId");
-  if (id) return id;
-
-  const { demoSessionId } = await postJSON(window.MYAGENCY_CONFIG.vapiDemoSessionUrl, {});
-  localStorage.setItem("demoSessionId", demoSessionId);
-  return demoSessionId;
-}
-
-function fmtDateTime(iso) {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString("es-ES", {
-      weekday: "short",
-      day: "2-digit",
-      month: "short",
-      year: "numeric",
-      hour: "2-digit",
-      minute: "2-digit",
-    });
-  } catch {
-    return iso;
-  }
-}
-
-async function pollDemoResult(demoSessionId) {
-  if (!demoSessionId) return;
-  if (window.__demoPolling) return; // prevent double polling
-  window.__demoPolling = true;
-
-  const box = document.getElementById("demoResult");
-  const txt = document.getElementById("demoResultText");
-  const btn = document.getElementById("demoOpenCalBtn");
-  if (!box || !txt || !btn) return;
-
-  const start = Date.now();
-  const timeoutMs = 90_000; // 90s total
-
-  try {
-    while (Date.now() - start < timeoutMs) {
-      const url = `${window.MYAGENCY_CONFIG.vapiDemoStatusUrl}?demoSessionId=${encodeURIComponent(demoSessionId)}`;
-      const s = await getJSON(url);
-      const ev = s?.lastEvent;
-
-      if (ev && (ev.start || ev.summary)) {
-        const when = fmtDateTime(ev.start);
-        txt.textContent = `${ev.summary || "Cita creada"}${when ? " • " + when : ""}`;
-
-        if (ev.htmlLink) {
-          btn.href = ev.htmlLink;
-          btn.style.display = "inline-flex";
-        } else {
-          btn.style.display = "none";
-        }
-
-        box.style.display = "block";
-        return;
-      }
-
-      await new Promise((r) => setTimeout(r, 1500));
-    }
-  } catch (e) {
-    console.warn("[pollDemoResult] error:", e);
-  } finally {
-    window.__demoPolling = false;
-  }
-}
 
 async function settleDemoUsage({ demoPageId, callId }) {
   const url = window.MYAGENCY_CONFIG.vapiDemoSettleUrl;
@@ -261,14 +170,18 @@ async function settleDemoUsage({ demoPageId, callId }) {
   try {
     await postJSON(url, { demoPageId, callId });
   } catch (e) {
+    // Best-effort only; don't block UX
     console.warn("[Settle] failed:", e);
   }
 }
 
 function attachVapiEndHandlers(vapi) {
+  // Attach only once
   if (window.__vapiEndHandlerAttached) return;
   window.__vapiEndHandlerAttached = true;
 
+  // Try common event APIs. If your Vapi SDK uses different event names,
+  // log events and adjust accordingly.
   const handler = async (evt) => {
     try {
       const callId =
@@ -289,10 +202,12 @@ function attachVapiEndHandlers(vapi) {
 
   try {
     if (typeof vapi.on === "function") {
+      // Common guesses
       vapi.on("call-end", handler);
       vapi.on("callEnded", handler);
       vapi.on("ended", handler);
 
+      // Capture call id early if available
       vapi.on("call-start", (evt) => {
         const callId = evt?.call?.id || evt?.callId || evt?.id || null;
         if (callId) window.__lastVapiCallId = callId;
@@ -306,11 +221,73 @@ function attachVapiEndHandlers(vapi) {
     console.warn("[Vapi events] failed to attach:", e);
   }
 }
+ async function postJSON2(url, payload){
+  const r = await fetch(url, {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify(payload || {})
+  });
+  const data = await r.json().catch(()=> ({}));
+  if(!r.ok) throw new Error(data?.error || "Error");
+  return data;
+}
+
+async function getJSON2(url){
+  const r = await fetch(url);
+  const data = await r.json().catch(()=> ({}));
+  if(!r.ok) throw new Error(data?.error || "Error");
+  return data;
+}
+
+function fmtDateTime(iso){
+  if(!iso) return "";
+  try{
+    const d = new Date(iso);
+    return d.toLocaleString("es-ES", { weekday:"short", day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  }catch{ return iso; }
+}
+
+ async function ensureDemoSessionId(){
+  const { demoSessionId } = await postJSON2("/api/vapi-demo/session", {});
+  localStorage.setItem("demoSessionId", demoSessionId);
+  return demoSessionId;
+}
+
+async function pollDemoResult(demoSessionId){
+  const box = document.getElementById("demoResult");
+  const txt = document.getElementById("demoResultText");
+  const btn = document.getElementById("demoOpenCalBtn");
+  if(!box || !txt || !btn) return;
+
+  const start = Date.now();
+  const timeoutMs = 120_000;
+
+  while(Date.now() - start < timeoutMs){
+    const s = await getJSON2(`/api/vapi-demo/status?demoSessionId=${encodeURIComponent(demoSessionId)}`);
+    const ev = s.lastEvent;
+
+    if(ev && (ev.start || ev.summary)){
+      const when = fmtDateTime(ev.start);
+      txt.textContent = `${ev.summary || "Cita creada"}${when ? " • " + when : ""}`;
+
+      if (ev.htmlLink) {
+        btn.href = ev.htmlLink;
+        btn.style.display = "inline-flex";
+      } else {
+        btn.style.display = "none";
+      }
+
+      box.style.display = "block";
+      return;
+    }
+    await new Promise(r => setTimeout(r, 1500));
+  }
+}
 
 function attachDemoHandlers() {
   // Open modal
   $all("[data-open-demo]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
+    btn.addEventListener("click", () => {
       const modal = btn.getAttribute("data-open-demo");
       openModal(modal);
 
@@ -321,11 +298,6 @@ function attachDemoHandlers() {
         const svc = form.querySelector("input[name=service]");
         if (svc) svc.value = service;
       }
-
-      // Create a session id early (optional convenience)
-      try {
-        window.__demoSessionId = await ensureDemoSessionId();
-      } catch {}
     });
   });
 
@@ -344,7 +316,8 @@ function attachDemoHandlers() {
     });
   });
 
-  // Submit demo form
+  // Submit
+   // Submit
   $all("form[data-demo-form]").forEach((form) => {
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
@@ -379,50 +352,47 @@ function attachDemoHandlers() {
           submitBtn.textContent = "Procesando…";
         }
 
-        // 1) captcha + pick an available demo FIRST
-        showToast("Verificando…");
+// 1) captcha + pick an available demo FIRST (so bots don't hit n8n)
+showToast("Verificando…");
 
-        const captchaToken = getTurnstileToken();
-        if (!captchaToken) {
-          showToast("Completa la verificación antes de continuar.");
-          resetTurnstile();
-          return;
-        }
+const captchaToken = getTurnstileToken();
+if (!captchaToken) {
+  showToast("Completa la verificación antes de continuar.");
+  resetTurnstile();
+  return;
+}
 
-        // Create demo session id (used to show the right event)
-        const demoSessionId = window.__demoSessionId || await ensureDemoSessionId();
-        window.__demoSessionId = demoSessionId;
-        payload.demoSessionId = demoSessionId;
+let demo;
+try {
+  demo = await fetchAvailableDemo(captchaToken);
+} catch (selErr) {
+  console.error(selErr);
+  showToast("No se pudo verificar disponibilidad. Intenta de nuevo.");
+  resetTurnstile();
+  return;
+}
 
-        let demo;
-        try {
-          demo = await fetchAvailableDemo(captchaToken);
-        } catch (selErr) {
-          console.error(selErr);
-          showToast("No se pudo verificar disponibilidad. Intenta de nuevo.");
-          resetTurnstile();
-          return;
-        }
+if (!demo || demo.ok !== true) {
+  const msg =
+    demo?.detail ||
+    demo?.message ||
+    "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
+  showToast(msg);
+  resetTurnstile();
+  return;
+}
 
-        if (!demo || demo.ok !== true) {
-          const msg =
-            demo?.detail ||
-            demo?.message ||
-            "No se puede probar ahora mismo, intenta en unas horas. O contáctanos por WhatsApp y lo arreglamos.";
-          showToast(msg);
-          resetTurnstile();
-          return;
-        }
+// 2) only now send to n8n (human verified + demo available)
+try {
+payload.demoSessionId = window.__demoSessionId || await ensureDemoSessionId();
 
-        // 2) only now send to n8n
-        try {
-          await postPlainJSON(startUrl, payload);
-        } catch (n8nErr) {
-          console.error(n8nErr);
-          showToast("Error enviando el formulario. Intenta de nuevo.");
-          resetTurnstile();
-          return;
-        }
+  await postPlainJSON(startUrl, payload);
+} catch (n8nErr) {
+  console.error(n8nErr);
+  showToast("Error enviando el formulario. Intenta de nuevo.");
+  resetTurnstile();
+  return;
+}
 
         // Store selected demo config globally
         window.VAPI_WEB = window.VAPI_WEB || {};
@@ -433,53 +403,56 @@ function attachDemoHandlers() {
         // 3) initialize Vapi ONLY now
         let vapi;
         try {
-          await loadVapiSDKOnce();
+await loadVapiSDKOnce();
           vapi = ensureVapiInstance();
           attachVapiEndHandlers(vapi);
         } catch (e2) {
           console.error(e2);
-          showToast(`Error cargando asistente: ${e2?.message || e2}`);
-          resetTurnstile();
+           showToast(`Error cargando asistente: ${e2?.message || e2}`);
+  resetTurnstile();
           return;
         }
+const demoSessionId = await ensureDemoSessionId();
+window.__demoSessionId = demoSessionId;
 
         closeModal("#demoModal");
         showToast("Iniciando llamada…");
 
-        // 4) start call safely (and start polling AFTER call starts)
-        try {
-          const result = await vapi.start(window.VAPI_WEB.assistantId, {
-            variableValues: { company: payload.company },
-          });
+        // 4) start call safely
+       try {
+  const result = await vapi.start(window.VAPI_WEB.assistantId, {
+    variableValues: { company: payload.company },
+  });
 
-          resetTurnstile();
+  resetTurnstile();
 
-          const callId = result?.call?.id || result?.id || result?.callId || null;
-          if (callId) window.__lastVapiCallId = callId;
+  // Best effort: capture callId if returned
+  const callId = result?.call?.id || result?.id || result?.callId || null;
+  if (callId) window.__lastVapiCallId = callId;
 
-          // ✅ Start polling after call starts
-          pollDemoResult(demoSessionId);
+  // ✅ START POLLING AFTER CALL STARTS
+  pollDemoResult(window.__demoSessionId);
 
-        } catch (startErr) {
-          console.error(startErr);
-          resetTurnstile();
+} catch (startErr) {
+  console.error(startErr);
+  resetTurnstile();
 
-          const msg = (startErr && (startErr.errorMsg || startErr.message)) || "";
-          if (msg.toLowerCase().includes("meeting has ended")) {
-            showToast("La llamada terminó inmediatamente. Revisa permisos del micrófono y configuración del asistente.");
-          } else {
-            showToast("No se pudo iniciar la llamada. Revisa la consola.");
-          }
-          return;
-        }
+  const msg = (startErr && (startErr.errorMsg || startErr.message)) || "";
+  if (msg.toLowerCase().includes("meeting has ended")) {
+    showToast("La llamada terminó inmediatamente. Revisa permisos del micrófono y configuración del asistente.");
+  } else {
+    showToast("No se pudo iniciar la llamada. Revisa la consola.");
+  }
+  return;
+}
 
         form.reset();
-
       } catch (err) {
         console.error(err);
         showToast("Error enviando el formulario. Revisa el webhook.");
       } finally {
         window.__demoSubmitting = false;
+
         if (submitBtn) {
           submitBtn.disabled = false;
           submitBtn.textContent = originalText;
@@ -488,27 +461,23 @@ function attachDemoHandlers() {
     });
   });
 }
-
-// Auth / nav
 async function getMe() {
-  const res = await fetch("/api/auth/me", { method: "GET", credentials: "include" });
+  const res = await fetch("/api/auth/me", { method: "GET" });
   if (!res.ok) return null;
   const data = await res.json().catch(() => null);
   return data?.user || null;
 }
-
 async function updateNavAuthLink() {
   const a = document.getElementById("navAuth");
   if (!a) return;
 
-  const me = await getMe();
+  const me = await getMe(); // uses /api/auth/me
   if (!me) return;
 
   a.textContent = "Panel";
   a.href = "/dashboard/";
 }
 
-// Stripe checkout handlers (as you had)
 function attachStripeHandlers() {
   $all("[data-pay-link]").forEach((btn) => {
     btn.addEventListener("click", async () => {
@@ -518,7 +487,7 @@ function attachStripeHandlers() {
       const me = await getMe();
       if (!me) {
         const next = encodeURIComponent(window.location.pathname + window.location.search + window.location.hash);
-        window.location.href = `/register/?next=${next}&plan=${encodeURIComponent(plan)}&autopay=1`;
+       window.location.href = `/register/?next=${next}&plan=${encodeURIComponent(plan)}&autopay=1`;
         return;
       }
 
@@ -540,7 +509,6 @@ function attachStripeHandlers() {
     });
   });
 }
-
 async function maybeAutoCheckout() {
   const url = new URL(window.location.href);
   const plan = url.searchParams.get("plan");
@@ -551,20 +519,22 @@ async function maybeAutoCheckout() {
   const me = await getMe();
   if (!me) return;
 
+  // Avoid re-triggering if user refreshes
   url.searchParams.delete("autopay");
   history.replaceState({}, "", url.pathname + url.search + url.hash);
 
+  // Small UX message
   showToast("Cuenta lista. Redirigiendo al pago…");
 
+  // Trigger the matching plan button
   const btn = document.querySelector(`[data-pay-link="${CSS.escape(plan)}"]`);
   if (btn) btn.click();
 }
 
-// Boot
 document.addEventListener("DOMContentLoaded", () => {
   attachDemoHandlers();
   attachStripeHandlers();
-  maybeAutoCheckout();
-  updateNavAuthLink();
+ maybeAutoCheckout();
+updateNavAuthLink();
   console.log("[App] handlers attached");
 });
