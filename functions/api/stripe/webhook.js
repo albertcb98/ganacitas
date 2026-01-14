@@ -321,37 +321,75 @@ if (stripeStatus === "canceled") {
       return json({ ok: true });
     }
 
-    // E) invoice.payment_succeeded -> new billing cycle OK (clear grace + reset)
-    if (type === "invoice.payment_succeeded") {
-      const invoice = obj;
-      const customerId = invoice.customer;
-      const nowIso = new Date().toISOString();
+  // E) invoice.payment_succeeded -> new billing cycle OK (clear grace + reset)
+if (type === "invoice.payment_succeeded") {
+  const invoice = obj;
+  const customerId = invoice.customer;
+  const nowIso = new Date().toISOString();
 
-      const period = invoice.lines?.data?.[0]?.period;
-      const cycleStart = period?.start ? new Date(period.start * 1000).toISOString() : null;
-      const cycleEnd = period?.end ? new Date(period.end * 1000).toISOString() : null;
+  // ✅ SAFELY find the subscription line (period lives here)
+  const lines = invoice.lines?.data || [];
+  const subLine =
+    lines.find((l) => l?.period && l?.subscription) ||
+    lines.find((l) => l?.period) ||
+    null;
 
-      await env.DB.prepare(
-        `UPDATE users
-         SET paid_status='active',
-             grace_until_at=NULL,
-             cycle_start_at=COALESCE(?, cycle_start_at),
-             cycle_end_at=COALESCE(?, cycle_end_at),
-             spent_eur_this_cycle=CASE WHEN ? IS NOT NULL THEN 0 ELSE spent_eur_this_cycle END,
-             updated_at=?
-         WHERE stripe_customer_id=?`
-      ).bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId).run();
+  const cycleStart = subLine?.period?.start
+    ? new Date(subLine.period.start * 1000).toISOString()
+    : null;
 
-const repRow = await env.DB.prepare(
-  "SELECT sales_rep_name FROM users WHERE stripe_customer_id = ?"
-).bind(customerId).first();
+  const cycleEnd = subLine?.period?.end
+    ? new Date(subLine.period.end * 1000).toISOString()
+    : null;
 
-      await notifyTelegram(env, `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart} → ${cycleEnd}`);
-      return json({ ok: true });
-    }
+  await env.DB.prepare(
+    `UPDATE users
+     SET paid_status='active',
+         grace_until_at=NULL,
+         cycle_start_at=COALESCE(?, cycle_start_at),
+         cycle_end_at=COALESCE(?, cycle_end_at),
+         spent_eur_this_cycle=CASE
+           WHEN ? IS NOT NULL THEN 0
+           ELSE spent_eur_this_cycle
+         END,
+         updated_at=?
+     WHERE stripe_customer_id=?`
+  )
+    .bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId)
+    .run();
 
-    return json({ ok: true, ignored: type });
-  } catch (e) {
+  // ✅ Preserve comercial data (prefer Stripe metadata; fallback to DB)
+  let rep = null;
+
+  // 1) If you set subscription_data[metadata][sales_rep_name] (best),
+  // Stripe includes it on invoices in subscription_details.metadata (often),
+  // and/or on the subscription itself.
+  rep =
+    invoice?.subscription_details?.metadata?.sales_rep_name ||
+    invoice?.metadata?.sales_rep_name ||
+    null;
+
+  // 2) Fallback to your DB value
+  if (!rep) {
+    const repRow = await env.DB.prepare(
+      "SELECT sales_rep_name FROM users WHERE stripe_customer_id = ? LIMIT 1"
+    )
+      .bind(customerId)
+      .first();
+    rep = repRow?.sales_rep_name || null;
+  }
+
+  // normalize display
+  rep = (rep || "none").toString().trim().replace(/\s+/g, " ");
+
+  await notifyTelegram(
+    env,
+    `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart || "?"} → ${cycleEnd || "?"}`
+  );
+
+  return json({ ok: true });
+}
+ catch (e) {
     return json({ error: "Webhook handler error", detail: String(e?.message || e) }, 500);
   }
 }

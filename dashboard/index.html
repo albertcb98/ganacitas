@@ -244,7 +244,7 @@ setBillingBanner(s.billingWarningText || null);
       document.getElementById("planName").textContent = s.planLabel ?? "—";
       document.getElementById("callsIncluded").textContent = s.callsIncluded ?? 0;
       document.getElementById("callsRemaining").textContent = s.callsRemaining ?? 0;
-
+ document.getElementById("topupBalance").textContent = `${s.topupBalanceEur ?? 0}€`;
       setAgentUI(s.agentStatus || "preparacion", Number(s.callsRemaining || 0));
 
       document.getElementById("notify50").checked = !!s.notify50;

@@ -57,6 +57,7 @@
           <div class="pill">Plan: <span class="code" id="umPlan">—</span></div>
           <div class="pill">paid_status: <span class="code" id="umPaid">—</span></div>
           <div class="pill">Agente: <span class="code" id="umAgent">—</span></div>
+<div class="pill">Número: <span class="code" id="umPhone">—</span></div>
           <div class="pill">Gracia hasta: <span class="code" id="umGrace">—</span></div>
         </div>
 
@@ -154,7 +155,7 @@ function openModal(u){
   document.getElementById("umPaid").textContent = u.paid_status || "—";
   document.getElementById("umAgent").textContent = u.agent_status || "—";
   document.getElementById("umGrace").textContent = u.grace_until_at || "—";
-
+document.getElementById("umPhone").textContent = u.vapi_phone_number_e164 || "—";
   document.getElementById("userModal").style.display = "block";
 }
 
@@ -217,8 +218,15 @@ async function runAction(action){
 document.getElementById("btnGrace5").addEventListener("click", ()=> runAction("grace_plus_5"));
 document.getElementById("btnGraceRemove").addEventListener("click", ()=> runAction("grace_remove"));
 document.getElementById("btnPauseAgent").addEventListener("click", ()=> runAction("pause_agent"));
-document.getElementById("btnDeletePhone")
-  .addEventListener("click", ()=> runAction("delete_phone_number"));
+document.getElementById("btnDeletePhone").addEventListener("click", async () => {
+  if (!SELECTED?.id) return;
+
+  const num = (SELECTED.vapi_phone_number_e164 || SELECTED.vapi_phone_number_id || "—").toString();
+  const ok = confirm(`¿Estás seguro que quieres eliminar el número ${num}?\n\nEsto pausará el agente y liberará el número.`);
+  if (!ok) return;
+
+  await runAction("delete_phone_number");
+});
 
 (async ()=>{
   try{

@@ -7,7 +7,7 @@
 // Env required:
 // - DB (D1 binding)
 // - JWT_SECRET
-// - SITE_URL (e.g. https://ganacitas.pages.dev)
+// - SITE_URL (e.g. https://ganacitas.com)
 // - STRIPE_SECRET_KEY (sk_test_... or sk_live_... depending on environment)
 // - STRIPE_10_TOPUP, STRIPE_20_TOPUP, STRIPE_50_TOPUP (Price IDs)
 
