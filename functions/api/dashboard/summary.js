@@ -145,13 +145,15 @@ export async function onRequestGet({ request, env }) {
   const userId = payload?.sub;
   if (!userId) return json({ error: "No autorizado" }, 401);
 
+  // ✅ ADDED: topup_balance_eur (to show + compute calls)
   const user = await env.DB.prepare(
     `SELECT id, paid_status, plan, agent_status,
             grace_until_at,
             vapi_assistant_id, vapi_api_key,
             notify_50, notify_80,
             auto_topup_enabled, auto_topup_amount_eur,
-            last_usage_sync_at, spent_eur_this_cycle
+            last_usage_sync_at, spent_eur_this_cycle,
+            topup_balance_eur
      FROM users WHERE id=? LIMIT 1`
   )
     .bind(userId)
@@ -210,6 +212,9 @@ export async function onRequestGet({ request, env }) {
       autoTopupEnabled: false,
       autoTopupAmountEur: 10,
 
+      // ✅ ADDED so dashboard can show it even if not active (optional but useful)
+      topupBalanceEur: Number(user.topup_balance_eur || 0),
+
       googleCalendarConnected,
       googleSheetsConnected,
       vapiAssistantLinked: !!user.vapi_assistant_id,
@@ -228,16 +233,25 @@ export async function onRequestGet({ request, env }) {
     spentEur = refreshed.spentEur;
   }
 
+  // ✅ NEW: include topups in remaining calls
   const COST_PER_CALL_EUR = 0.30;
+
   const usedCalls = Math.ceil(spentEur / COST_PER_CALL_EUR);
-  const remaining = Math.max(0, cfg.callsIncluded - usedCalls);
+
+  const planRemaining = Math.max(0, cfg.callsIncluded - usedCalls);
+
+  const topupBalanceEur = Number(user.topup_balance_eur || 0);
+  const topupCalls = Math.max(0, Math.floor(topupBalanceEur / COST_PER_CALL_EUR));
+
+  // total remaining = plan remaining + topup calls
+  const remaining = planRemaining + topupCalls;
 
   let agentStatus = user.agent_status || "preparacion";
 
-  // Pause if no calls
+  // Pause only if BOTH plan and topup are exhausted
   if (remaining <= 0) agentStatus = "pausado";
 
-  // Also pause if subscription non-active AND grace expired (defensive)
+  // Defensive: if subscription non-active AND grace expired -> pause
   if (user.paid_status !== "active" && user.grace_until_at) {
     const d = daysLeft(user.grace_until_at);
     if (d != null && d <= 0) agentStatus = "pausado";
@@ -253,9 +267,15 @@ export async function onRequestGet({ request, env }) {
     plan: user.plan,
     planLabel: cfg.label,
     callsIncluded: cfg.callsIncluded,
+
+    // ✅ now includes topups
     callsRemaining: remaining,
+
     agentStatus,
     spentEurThisCycle: Number(spentEur.toFixed(2)),
+
+    // ✅ expose topup balance for dashboard UI
+    topupBalanceEur: Number(topupBalanceEur.toFixed(2)),
 
     notify50: !!user.notify_50,
     notify80: !!user.notify_80,
