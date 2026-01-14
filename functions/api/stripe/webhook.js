@@ -387,9 +387,8 @@ if (type === "invoice.payment_succeeded") {
     `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart || "?"} → ${cycleEnd || "?"}`
   );
 
-  return json({ ok: true });
-}
- catch (e) {
+  return json({ ok: true, ignored: type });
+  } catch (e) {
     return json({ error: "Webhook handler error", detail: String(e?.message || e) }, 500);
   }
 }
