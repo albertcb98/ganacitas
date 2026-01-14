@@ -44,6 +44,7 @@ const { results } = await env.DB.prepare(`
     vapi_assistant_id,
     vapi_phone_number_id, vapi_phone_number_e164, phone_state,
     last_topup_paid_at, last_topup_applied_at,
+last_subscription_paid_at,last_subscription_applied_at,
     mcp_url,
     created_at, updated_at
   FROM users

@@ -148,6 +148,8 @@ export async function onRequestPost({ request, env }) {
                stripe_customer_id=?,
                stripe_subscription_id=?,
                grace_until_at=NULL,
+last_subscription_paid_at=?,
+       last_subscription_applied_at=?,
                updated_at=?
            WHERE id=?`
         ).bind(customerId, subscriptionId, nowIso, userId).run();
@@ -304,7 +306,8 @@ export async function onRequestPost({ request, env }) {
              cycle_start_at=COALESCE(?, cycle_start_at),
              cycle_end_at=COALESCE(?, cycle_end_at),
              spent_eur_this_cycle=CASE WHEN ? IS NOT NULL THEN 0 ELSE spent_eur_this_cycle END,
-             updated_at=?
+             last_subscription_paid_at=?,
+       updated_at=?
          WHERE stripe_customer_id=?`
       ).bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId).run();
 
