@@ -21,35 +21,14 @@ function toBytes(str) {
   return new TextEncoder().encode(str);
 }
 
-function bytesToHex(bytes) {
-  return Array.from(bytes)
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
-
-function constantTimeEqual(a, b) {
-  if (typeof a !== "string" || typeof b !== "string") return false;
-  if (a.length !== b.length) return false;
-  let out = 0;
-  for (let i = 0; i < a.length; i++) out |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  return out === 0;
-}
-
 function hexToBytes(hex) {
   if (!hex || typeof hex !== "string" || hex.length % 2 !== 0) return null;
   const out = new Uint8Array(hex.length / 2);
-  for (let i = 0; i < out.length; i++) {
-    out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
-  }
+  for (let i = 0; i < out.length; i++) out[i] = parseInt(hex.slice(i * 2, i * 2 + 2), 16);
   return out;
 }
 
-async function verifyStripeSignature({
-  payloadRaw,
-  sigHeader,
-  secret,
-  toleranceSec = 5 * 60,
-}) {
+async function verifyStripeSignature({ payloadRaw, sigHeader, secret, toleranceSec = 5 * 60 }) {
   if (!sigHeader || !secret) return { ok: false, reason: "Missing signature or secret" };
 
   const parts = sigHeader.split(",").map((p) => p.trim());
@@ -60,11 +39,8 @@ async function verifyStripeSignature({
   const timestamp = Number(tPart.slice(2));
   if (!Number.isFinite(timestamp)) return { ok: false, reason: "Bad timestamp" };
 
-  // replay protection
   const now = Math.floor(Date.now() / 1000);
-  if (Math.abs(now - timestamp) > toleranceSec) {
-    return { ok: false, reason: "Timestamp outside tolerance" };
-  }
+  if (Math.abs(now - timestamp) > toleranceSec) return { ok: false, reason: "Timestamp outside tolerance" };
 
   const signedPayload = `${timestamp}.${payloadRaw}`;
 
@@ -76,24 +52,17 @@ async function verifyStripeSignature({
     ["verify"]
   );
 
-  // accept if ANY v1 signature matches
   for (const p of v1Parts) {
-    const sigHex = p.slice(3); // after "v1="
+    const sigHex = p.slice(3);
     const sigBytes = hexToBytes(sigHex);
     if (!sigBytes) continue;
 
-    const ok = await crypto.subtle.verify(
-      "HMAC",
-      key,
-      sigBytes,
-      toBytes(signedPayload)
-    );
+    const ok = await crypto.subtle.verify("HMAC", key, sigBytes, toBytes(signedPayload));
     if (ok) return { ok: true };
   }
 
   return { ok: false, reason: "Signature mismatch" };
 }
-
 
 function addDaysISO(isoOrNow, days) {
   const d = isoOrNow ? new Date(isoOrNow) : new Date();
@@ -111,6 +80,7 @@ function planFromPriceId(env, priceId) {
 
 function topupAmountFromPriceId(env, priceId) {
   if (!priceId) return 0;
+  // IMPORTANT: match your topup env var names used in start.js
   if (priceId === env.STRIPE_10_TOPUP) return 10;
   if (priceId === env.STRIPE_20_TOPUP) return 20;
   if (priceId === env.STRIPE_50_TOPUP) return 50;
@@ -182,8 +152,8 @@ export async function onRequestPost({ request, env }) {
            WHERE id=?`
         ).bind(customerId, subscriptionId, nowIso, userId).run();
 
-    const rep = session?.metadata?.sales_rep_name || "none";
-await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} • comercial=${rep}`);
+        const rep = (session?.metadata?.sales_rep_name || "none").toString().trim().replace(/\s+/g, " ");
+        await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} • comercial=${rep}`);
 
         return json({ ok: true });
       }
@@ -209,9 +179,10 @@ await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} •
         await env.DB.prepare(
           `UPDATE users
            SET topup_balance_eur = COALESCE(topup_balance_eur, 0) + ?,
+               last_topup_paid_at=?,
                updated_at=?
            WHERE id=?`
-        ).bind(topupEur, nowIso, userId).run();
+        ).bind(topupEur, nowIso, nowIso, userId).run();
 
         await notifyTelegram(env, `➕ Topup €${topupEur}: user=${userId}`);
         return json({ ok: true });
@@ -232,37 +203,30 @@ await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} •
       const priceId = sub.items?.data?.[0]?.price?.id || null;
       const plan = planFromPriceId(env, priceId);
 
-      // Map to your paid_status
       let paid_status = "free";
       if (stripeStatus === "active" || stripeStatus === "trialing") paid_status = "active";
       else if (stripeStatus === "past_due" || stripeStatus === "unpaid") paid_status = "past_due";
       else if (stripeStatus === "canceled") paid_status = "canceled";
-      else paid_status = "past_due"; // safe default
+      else paid_status = "past_due";
 
-// If Stripe says canceled, cancel immediately (no grace)
-if (stripeStatus === "canceled") {
-  await env.DB.prepare(
-    `UPDATE users
-     SET paid_status='canceled',
-         grace_until_at=NULL,
-         updated_at=?
-     WHERE stripe_customer_id=?`
-  ).bind(nowIso, customerId).run();
+      // canceled => immediate cancel
+      if (stripeStatus === "canceled") {
+        await env.DB.prepare(
+          `UPDATE users
+           SET paid_status='canceled',
+               grace_until_at=NULL,
+               updated_at=?
+           WHERE stripe_customer_id=?`
+        ).bind(nowIso, customerId).run();
 
-  await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
-  return json({ ok: true });
-}
+        await notifyTelegram(env, `🛑 Suscripción cancelada: ${customerId}`);
+        return json({ ok: true });
+      }
 
-      // Grace rules:
-      // - canceled: immediate cancel (no grace)
-      // - past_due/unpaid: grace 5 days
-      // - active/trialing: clear grace
+      // grace
       const GRACE_DAYS = 5;
       let graceUntil = null;
-
       if (paid_status === "past_due") graceUntil = addDaysISO(nowIso, GRACE_DAYS);
-      if (paid_status === "canceled") graceUntil = null;
-      if (paid_status === "active") graceUntil = null;
 
       await env.DB.prepare(
         `UPDATE users
@@ -273,11 +237,8 @@ if (stripeStatus === "canceled") {
              grace_until_at=?,
              updated_at=?
          WHERE stripe_customer_id=?`
-      )
-        .bind(paid_status, subscriptionId, priceId, plan, graceUntil, nowIso, customerId)
-        .run();
+      ).bind(paid_status, subscriptionId, priceId, plan, graceUntil, nowIso, customerId).run();
 
-     
       return json({ ok: true });
     }
 
@@ -321,73 +282,57 @@ if (stripeStatus === "canceled") {
       return json({ ok: true });
     }
 
-  // E) invoice.payment_succeeded -> new billing cycle OK (clear grace + reset)
-if (type === "invoice.payment_succeeded") {
-  const invoice = obj;
-  const customerId = invoice.customer;
-  const nowIso = new Date().toISOString();
+    // E) invoice.payment_succeeded -> new billing cycle OK (clear grace + reset)
+    if (type === "invoice.payment_succeeded") {
+      const invoice = obj;
+      const customerId = invoice.customer;
+      const nowIso = new Date().toISOString();
 
-  // ✅ SAFELY find the subscription line (period lives here)
-  const lines = invoice.lines?.data || [];
-  const subLine =
-    lines.find((l) => l?.period && l?.subscription) ||
-    lines.find((l) => l?.period) ||
-    null;
+      const lines = invoice.lines?.data || [];
+      const subLine =
+        lines.find((l) => l?.period && l?.subscription) ||
+        lines.find((l) => l?.period) ||
+        null;
 
-  const cycleStart = subLine?.period?.start
-    ? new Date(subLine.period.start * 1000).toISOString()
-    : null;
+      const cycleStart = subLine?.period?.start ? new Date(subLine.period.start * 1000).toISOString() : null;
+      const cycleEnd = subLine?.period?.end ? new Date(subLine.period.end * 1000).toISOString() : null;
 
-  const cycleEnd = subLine?.period?.end
-    ? new Date(subLine.period.end * 1000).toISOString()
-    : null;
+      await env.DB.prepare(
+        `UPDATE users
+         SET paid_status='active',
+             grace_until_at=NULL,
+             cycle_start_at=COALESCE(?, cycle_start_at),
+             cycle_end_at=COALESCE(?, cycle_end_at),
+             spent_eur_this_cycle=CASE WHEN ? IS NOT NULL THEN 0 ELSE spent_eur_this_cycle END,
+             updated_at=?
+         WHERE stripe_customer_id=?`
+      ).bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId).run();
 
-  await env.DB.prepare(
-    `UPDATE users
-     SET paid_status='active',
-         grace_until_at=NULL,
-         cycle_start_at=COALESCE(?, cycle_start_at),
-         cycle_end_at=COALESCE(?, cycle_end_at),
-         spent_eur_this_cycle=CASE
-           WHEN ? IS NOT NULL THEN 0
-           ELSE spent_eur_this_cycle
-         END,
-         updated_at=?
-     WHERE stripe_customer_id=?`
-  )
-    .bind(cycleStart, cycleEnd, cycleStart, nowIso, customerId)
-    .run();
+      // Preserve comercial data (prefer Stripe metadata; fallback to DB)
+      let rep =
+        invoice?.subscription_details?.metadata?.sales_rep_name ||
+        invoice?.metadata?.sales_rep_name ||
+        null;
 
-  // ✅ Preserve comercial data (prefer Stripe metadata; fallback to DB)
-  let rep = null;
+      if (!rep) {
+        const repRow = await env.DB.prepare(
+          "SELECT sales_rep_name FROM users WHERE stripe_customer_id = ? LIMIT 1"
+        ).bind(customerId).first();
+        rep = repRow?.sales_rep_name || null;
+      }
 
-  // 1) If you set subscription_data[metadata][sales_rep_name] (best),
-  // Stripe includes it on invoices in subscription_details.metadata (often),
-  // and/or on the subscription itself.
-  rep =
-    invoice?.subscription_details?.metadata?.sales_rep_name ||
-    invoice?.metadata?.sales_rep_name ||
-    null;
+      rep = (rep || "none").toString().trim().replace(/\s+/g, " ");
 
-  // 2) Fallback to your DB value
-  if (!rep) {
-    const repRow = await env.DB.prepare(
-      "SELECT sales_rep_name FROM users WHERE stripe_customer_id = ? LIMIT 1"
-    )
-      .bind(customerId)
-      .first();
-    rep = repRow?.sales_rep_name || null;
-  }
+      await notifyTelegram(
+        env,
+        `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart || "?"} → ${cycleEnd || "?"}`
+      );
 
-  // normalize display
-  rep = (rep || "none").toString().trim().replace(/\s+/g, " ");
+      return json({ ok: true });
+    }
 
-  await notifyTelegram(
-    env,
-    `✅ Pago OK (renovación): ${customerId} • comercial=${rep} • ciclo ${cycleStart || "?"} → ${cycleEnd || "?"}`
-  );
-
-  return json({ ok: true, ignored: type });
+    // default
+    return json({ ok: true, ignored: type });
   } catch (e) {
     return json({ error: "Webhook handler error", detail: String(e?.message || e) }, 500);
   }
