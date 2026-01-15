@@ -60,7 +60,7 @@ export async function onRequestGet({ request, env }) {
     if (!userId) return json({ error:"No autorizado" }, 401);
 
     const urow = await env.DB.prepare(
-      "SELECT talked_to_s, sales_rep_name FROM users WHERE id = ?"
+      "SELECT talked_to_sales, sales_rep_name FROM users WHERE id = ?"
     ).bind(userId).first();
 
     const repName = (urow?.sales_rep_name || "")
@@ -68,7 +68,7 @@ export async function onRequestGet({ request, env }) {
       .trim()
       .replace(/\s+/g, " ");
 
-    const talkedTo = urow?.talked_to_s ? "1" : "0";
+    const talkedTo = urow?.talked_to_sales ? "1" : "0";
 
     const u = new URL(request.url);
     const amount = Number(u.searchParams.get("amount") || 0);
