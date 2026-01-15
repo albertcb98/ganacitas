@@ -136,6 +136,11 @@ function isSubPending(u){
   const applied = u.last_subscription_applied_at ? Date.parse(u.last_subscription_applied_at) : 0;
   return paid && (!applied || paid > applied);
 }
+function isTopupPending(u){
+    const paid = u.last_topup_paid_at ? Date.parse(u.last_topup_paid_at) : 0;
+    const applied = u.last_topup_applied_at ? Date.parse(u.last_topup_applied_at) : 0;
+    return paid && (!applied || paid > applied);
+  }
 function graceLabel(iso){
   if(!iso) return "—";
   const ms = new Date(iso).getTime() - Date.now();
@@ -185,10 +190,11 @@ async function refreshTable(){
   for(const u of USERS){
     const tr = document.createElement("tr");
 const pendingSub = isSubPending(u);
+const pendingTopup = isTopupPending(u);
+const pendingAny = pendingSub || pendingTopup;
 
     // ✅ Row highlighting (put it HERE)
-if (pendingSub) {
-  // subscription paid but not applied in your system
+if (pendingAny) {
   tr.style.background = "rgba(255,0,0,.06)";
 } else if (u.paid_status === "canceled") {
   tr.style.background = "rgba(255,0,0,.06)";
@@ -200,7 +206,10 @@ if (pendingSub) {
 
     tr.appendChild(td(u.email));
     tr.appendChild(td(u.plan || "free"));
-   tr.appendChild(td((u.paid_status || "—") + (isSubPending(u) ? " ⚠️ pendiente aplicar" : "")));
+   let warn = "";
+if (pendingSub) warn += " ⚠️ sub pendiente";
+if (pendingTopup) warn += " ⚠️ topup pendiente";
+tr.appendChild(td((u.paid_status || "—") + warn));
     tr.appendChild(td(graceLabel(u.grace_until_at)));
     tr.appendChild(td(u.agent_status || "—"));
     tr.appendChild(td(u.spent_eur_this_cycle ?? 0));
