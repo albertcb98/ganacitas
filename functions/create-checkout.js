@@ -48,7 +48,7 @@ const user = await env.DB.prepare(
   // Build params
 const params = new URLSearchParams({
   mode: "subscription",
-  success_url: `${siteUrl}/gracias?session_id={CHECKOUT_SESSION_ID}`,
+  success_url: `${siteUrl}/thank-you?session_id={CHECKOUT_SESSION_ID}`,
   cancel_url: `${siteUrl}/asistente-telefonico/#precios`,
 
   // tie Stripe session to your user
