@@ -142,15 +142,24 @@ export async function onRequestPost({ request, env }) {
 
       // A1) subscription checkout
       if (mode === "subscription") {
-        `UPDATE users
+      await env.DB.prepare(
+  `UPDATE users
    SET paid_status='active',
        stripe_customer_id=?,
        stripe_subscription_id=?,
        grace_until_at=NULL,
        last_subscription_paid_at=?,
+       last_subscription_applied_at=?,
        updated_at=?
    WHERE id=?`
-).bind(customerId, subscriptionId, nowIso, nowIso, userId).run();
+).bind(
+  customerId,
+  subscriptionId,
+  nowIso, // last_subscription_paid_at
+  nowIso, // last_subscription_applied_at
+  nowIso, // updated_at
+  userId
+).run();
 
         const rep = (session?.metadata?.sales_rep_name || "none").toString().trim().replace(/\s+/g, " ");
         await notifyTelegram(env, `✅ Nueva suscripción (checkout): user=${userId} • comercial=${rep}`);
