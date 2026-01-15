@@ -23,7 +23,7 @@ try {
   if (!payload?.sub) return json({ error: "Unauthorized" }, 401);
 
 const user = await env.DB.prepare(
-  "SELECT id, email, stripe_customer_id, talked_to_s, sales_rep_name FROM users WHERE id = ?"
+  "SELECT id, email, stripe_customer_id, talked_to_sales, sales_rep_name FROM users WHERE id = ?"
 ).bind(payload.sub).first();
 
   if (!user) return json({ error: "Unauthorized" }, 401);
@@ -75,7 +75,7 @@ const repName = (user.sales_rep_name || "")
   .toString()
   .trim()
   .replace(/\s+/g, " ");
-const talkedTo = user.talked_to_s ? "1" : "0";
+const talkedTo = user.talked_to_sales ? "1" : "0";
 
 // Metadata on Checkout Session
 params.set("metadata[user_id]", user.id);
