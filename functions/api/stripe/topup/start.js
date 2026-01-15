@@ -36,86 +36,98 @@ function pickTopupPriceId(env, amount){
 }
 
 export async function onRequestGet({ request, env }) {
-  if (!env.DB) return json({ error:"DB missing" }, 500);
-  if (!env.JWT_SECRET) return json({ error:"JWT_SECRET missing" }, 500);
-  if (!env.SITE_URL) return json({ error:"SITE_URL missing" }, 500);
-  if (!env.STRIPE_SECRET_KEY) return json({ error:"STRIPE_SECRET_KEY missing" }, 500);
 
-  // auth
-  const token = getCookie(request, "session");
-  if (!token) return json({ error:"No autorizado" }, 401);
+  // ⬇️ ADD THIS LINE
+  try {
 
-  let payload;
-try {
-  payload = await verifyJWT(env.JWT_SECRET, token);
-} catch {
-  return json({ error:"No autorizado" }, 401);
-}
-  const userId = payload?.sub;
-  if (!userId) return json({ error:"No autorizado" }, 401);
-const urow = await env.DB.prepare(
-  "SELECT talked_to_s, sales_rep_name FROM users WHERE id = ?"
-).bind(userId).first();
+    if (!env.DB) return json({ error:"DB missing" }, 500);
+    if (!env.JWT_SECRET) return json({ error:"JWT_SECRET missing" }, 500);
+    if (!env.SITE_URL) return json({ error:"SITE_URL missing" }, 500);
+    if (!env.STRIPE_SECRET_KEY) return json({ error:"STRIPE_SECRET_KEY missing" }, 500);
 
-const repName = (urow?.sales_rep_name || "").toString().trim().replace(/\s+/g, " ");
-const talkedTo = urow?.talked_to_s ? "1" : "0";
-  const u = new URL(request.url);
-  const amount = Number(u.searchParams.get("amount") || 0);
+    // auth
+    const token = getCookie(request, "session");
+    if (!token) return json({ error:"No autorizado" }, 401);
 
-  if (![10,20,50].includes(amount)) {
-    return json({ error:"amount must be 10, 20 or 50" }, 400);
+    let payload;
+    try {
+      payload = await verifyJWT(env.JWT_SECRET, token);
+    } catch {
+      return json({ error:"No autorizado" }, 401);
+    }
+
+    const userId = payload?.sub;
+    if (!userId) return json({ error:"No autorizado" }, 401);
+
+    const urow = await env.DB.prepare(
+      "SELECT talked_to_s, sales_rep_name FROM users WHERE id = ?"
+    ).bind(userId).first();
+
+    const repName = (urow?.sales_rep_name || "")
+      .toString()
+      .trim()
+      .replace(/\s+/g, " ");
+
+    const talkedTo = urow?.talked_to_s ? "1" : "0";
+
+    const u = new URL(request.url);
+    const amount = Number(u.searchParams.get("amount") || 0);
+
+    if (![10,20,50].includes(amount)) {
+      return json({ error:"amount must be 10, 20 or 50" }, 400);
+    }
+
+    const priceId = pickTopupPriceId(env, amount);
+    if (!priceId) return json({ error:"Topup price id missing in env" }, 500);
+
+    const successUrl = `${env.SITE_URL}/dashboard/?topup=success`;
+    const cancelUrl  = `${env.SITE_URL}/dashboard/?topup=cancel`;
+
+    const body = new URLSearchParams();
+    body.set("mode", "payment");
+    body.set("success_url", successUrl);
+    body.set("cancel_url", cancelUrl);
+    body.set("client_reference_id", userId);
+    body.set("line_items[0][price]", priceId);
+    body.set("line_items[0][quantity]", "1");
+
+    body.set("metadata[user_id]", userId);
+    body.set("metadata[topup_eur]", String(amount));
+    body.set("metadata[talked_to_sales_rep]", talkedTo);
+    body.set("metadata[sales_rep_name]", repName || "none");
+
+    body.set("payment_intent_data[metadata][user_id]", userId);
+    body.set("payment_intent_data[metadata][topup_eur]", String(amount));
+    body.set("payment_intent_data[metadata][talked_to_sales_rep]", talkedTo);
+    body.set("payment_intent_data[metadata][sales_rep_name]", repName || "none");
+
+    const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${env.STRIPE_SECRET_KEY}`,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: body.toString(),
+    });
+
+    const data = await r.json().catch(()=> ({}));
+    if (!r.ok) {
+      console.log("[stripe] create checkout failed", r.status, data);
+      return json({ error:"Stripe error", detail: data }, 400);
+    }
+
+    if (!data?.url) {
+      return json({ error:"Stripe session missing url" }, 400);
+    }
+
+    return Response.redirect(data.url, 302);
+
+  // ⬇️ ADD THIS BLOCK
+  } catch (e) {
+    console.error("[topup/start] Worker exception", e);
+    return json({
+      error: "Worker exception",
+      detail: String(e?.stack || e?.message || e)
+    }, 500);
   }
-
-  const priceId = pickTopupPriceId(env, amount);
-  if (!priceId) return json({ error:"Topup price id missing in env" }, 500);
-
-  // create checkout session
-  const successUrl = `${env.SITE_URL}/dashboard/?topup=success`;
-  const cancelUrl  = `${env.SITE_URL}/dashboard/?topup=cancel`;
-
-  // Stripe API: POST /v1/checkout/sessions
-  const body = new URLSearchParams();
-  body.set("mode", "payment");
-  body.set("success_url", successUrl);
-  body.set("cancel_url", cancelUrl);
-
-  // Link to your user (important)
-  body.set("client_reference_id", userId);
-
-  // One line item
-  body.set("line_items[0][price]", priceId);
-  body.set("line_items[0][quantity]", "1");
-
-  // Optional: helps in webhook reading (nice-to-have)
-  body.set("metadata[user_id]", userId);
-  body.set("metadata[topup_eur]", String(amount));
-body.set("metadata[talked_to_sales_rep]", talkedTo);
-body.set("metadata[sales_rep_name]", repName || "none");
-
-// Best practice: also put metadata on the PaymentIntent
-body.set("payment_intent_data[metadata][user_id]", userId);
-body.set("payment_intent_data[metadata][topup_eur]", String(amount));
-body.set("payment_intent_data[metadata][talked_to_sales_rep]", talkedTo);
-body.set("payment_intent_data[metadata][sales_rep_name]", repName || "none");
-
-  const r = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: {
-      "Authorization": `Bearer ${env.STRIPE_SECRET_KEY}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: body.toString(),
-  });
-
-  const data = await r.json().catch(()=> ({}));
-  if (!r.ok) {
-    console.log("[stripe] create checkout failed", r.status, data);
-    return json({ error:"Stripe error", detail: data }, 400);
-  }
-
-  if (!data?.url) {
-    return json({ error:"Stripe session missing url" }, 400);
-  }
-
-  return Response.redirect(data.url, 302);
 }
