@@ -34,7 +34,6 @@ function addDaysISO(baseIso, days){
 export async function onRequestPost({ request, env }) {
   if (!env.DB) return json({ error:"DB missing" }, 500);
   if (!env.JWT_SECRET) return json({ error:"JWT_SECRET missing" }, 500);
-
   const token = getCookie(request, "session");
   if (!token) return json({ error:"No autorizado" }, 401);
 
@@ -85,6 +84,38 @@ const user = await env.DB.prepare(
 
     return json({ ok:true });
   }
+  if (action === "delete_phone_number") {
+if (!env.VAPI_API_KEY) return json({ error:"VAPI_API_KEY missing" }, 500);
+    if (!user.vapi_phone_number_id) {
+      // already unassigned
+      await env.DB.prepare(
+        "UPDATE users SET phone_state='unassigned', updated_at=? WHERE id=?"
+      ).bind(nowIso, userId).run();
+      return json({ ok:true, already: "no_phone_number" });
+    }
 
+    const del = await fetch(`https://api.vapi.ai/phone-number/${user.vapi_phone_number_id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${env.VAPI_API_KEY}` },
+    });
+
+    if (!del.ok) {
+      const t = await del.text().catch(()=> "");
+      return json({ error:"Vapi delete failed", status: del.status, detail: t }, 400);
+    }
+
+    // mark unassigned in D1
+    await env.DB.prepare(
+      `UPDATE users
+       SET vapi_phone_number_id=NULL,
+           vapi_phone_number_e164=NULL,
+           phone_state='unassigned',
+           agent_status='pausado',
+           updated_at=?
+       WHERE id=?`
+    ).bind(nowIso, userId).run();
+
+    return json({ ok:true });
+  }
   return json({ error:"Unknown action" }, 400);
 }
